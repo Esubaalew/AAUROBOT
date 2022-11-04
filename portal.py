@@ -53,7 +53,7 @@ def grade(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Please wait...', quote=True)
         browser.open(url)
         browser.select_form(nr=0)
-        browser.addheaders: list = [('User-agent', 'Mozilla/104.0.2')]
+        browser.addheaders: list = [('User-agent', 'Generic user agent')]
         browser["UserName"] = username
         browser["Password"] = password
         loged = browser.submit()
@@ -246,7 +246,7 @@ def filter_documents(update: Update, context: CallbackContext):
 
 
 def main() -> None:
-    TOKEN: str = '5649163839:AAFcxkAuHPwYR7KB_1GUyniUGmTUiiiLIwY'
+    TOKEN: str = 'TOKEN'
     updater = Updater(TOKEN,
                       use_context=True)
     updater.dispatcher.add_handler(CommandHandler('start', start))
