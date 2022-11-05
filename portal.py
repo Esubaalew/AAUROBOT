@@ -33,13 +33,13 @@ def grade(update: Update, context: CallbackContext) -> None:
     if not len(userP) == 16:
         if len(userP) < 16:
             update.message.reply_text(
-                str(16-len(userP)) + ' char/s omitted. Coud you please re-enter?',
+                str(16-len(userP)) + ' char(s) omitted. Coud you please re-enter?',
                 quote=True)
             return
         elif len(userP) > 16:
             update.message.reply_text(
                 str(len(userP)-16) +
-                ' char/s are mis-included.Coud you please re-enter?',
+                ' char(s) are mis-included.Coud you please re-enter?',
                 quote=True)
             return
     if not '&' in userP:
