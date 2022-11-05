@@ -1,4 +1,4 @@
-#portal.py
+# portal.py
 """
 This module is all about AAU University students who want to know thier grade 
 reports faster than normal.
@@ -42,6 +42,43 @@ def grade(update: Update, context: CallbackContext) -> None:
                 ' char/s are mis-included.Coud you please re-enter?',
                 quote=True)
             return
+    if not '&' in userP:
+        update.message.reply_text(
+            '& is a must. re- enter with &. Example: UGR/1234/12&8921'
+        )
+        return
+    else:
+        pass
+    if not '/' in userP:
+        update.message.reply_text(
+            '/ character is omitted. A student username is like UGR/1234/12.\
+                re-enter.'
+        )
+        return
+    else:
+        pass
+    if not userP[3] == '/':
+        update.message.reply_text(
+            '/ omitted at UGR ?. Re-enter as UGR/ ...'
+        )
+        return
+    else:
+        pass
+    if not userP[8] == '/':
+        update.message.reply_text(
+            '/ omitted at UGR/1234?. Re-enter as UGR/1234/ ...'
+        )
+        return
+    else:
+        pass
+    if not userP[11] == '&':
+        update.message.reply_text(
+            '& omitted at UGR/fourdigit/12?pass. Re-enter as UGR/1234/12&Password...'
+        )
+        return
+    else:
+        pass
+
     userPass: str = userP.split('&')
     username: str = userPass[0]
     password: str = userPass[1]
@@ -53,18 +90,47 @@ def grade(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Please wait...', quote=True)
         browser.open(url)
         browser.select_form(nr=0)
-        browser.addheaders: list = [('User-agent', 'Generic user agent')]
+        browser.addheaders: list = [('User-agent', 'Mozilla/104.0.2')]
         browser["UserName"] = username
         browser["Password"] = password
         loged = browser.submit()
         loged = browser.response().read()
+        soup: BeautifulSoup = BeautifulSoup(loged, 'html.parser')
+        if 'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.' in soup.text:
+            update.message.reply_text(
+                'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.'
+            )
+            return
+        elif 'Invalid credentials. You have 3 more attempt(s) before your account gets locked out.' in soup.text:
+            update.message.reply_text(
+                'Invalid credentials. You have 3 more attempt(s) before your account gets locked out.')
+            return
+        elif 'Invalid credentials. You have 2 more attempt(s) before your account gets locked out.' in soup.text:
+            update.message.reply_text(
+                'Invalid credentials. You have 2 more attempt(s) before your account gets locked out.')
+            return
+        elif 'Invalid credentials. You have 1 more attempt(s) before your account gets locked out.' in soup.text:
+            update.message.reply_text(
+                'Invalid credentials. You have 1 more attempt(s) before your account gets locked out.')
+            return
+        elif 'Your account has been locked out for 15 minutes due to multiple failed login attempts.' in soup.text:
+            update.message.reply_text(
+                'Your account has been locked out for 15 minutes due to multiple failed login attempts.')
+            return
+        elif 'Your account has been locked out due to multiple failed login attempts.' in soup.text:
+            update.message.reply_text(
+                'Your account has been locked out due to multiple failed login attempts.'
+            )
+            return
+        else:
+            pass
         request = browser.click_link(url="/Grade/GradeReport")
         browser.open(request)
         content = (browser.response().read())
         soup: BeautifulSoup = BeautifulSoup(content, 'html.parser')
     except Exception:
         update.message.reply_text(
-            "Loging In failed !!.Caused by incorrect username/password"
+            "Loging In failed !!.Caused by website crash"
         )
 
     try:
@@ -246,7 +312,7 @@ def filter_documents(update: Update, context: CallbackContext):
 
 
 def main() -> None:
-    TOKEN: str = 'TOKEN'
+    TOKEN: str = '5725520658:AAGaChHk1Tj2lPGxU8ZQWMdFNTxgs9hstVg'
     updater = Updater(TOKEN,
                       use_context=True)
     updater.dispatcher.add_handler(CommandHandler('start', start))
