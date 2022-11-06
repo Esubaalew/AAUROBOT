@@ -121,13 +121,14 @@ def grade(update: Update, context: CallbackContext) -> None:
             update.message.reply_text(
                 'Your account has been locked out due to multiple failed login attempts.'
             )
+        elif 'Incorrect username or password.' in soup.text:
+            update.message.reply_text(
+                'Incorrect username or password.',
+                qoute=True
+            )
             return
         else:
             pass
-        request = browser.click_link(url="/Grade/GradeReport")
-        browser.open(request)
-        content = (browser.response().read())
-        soup: BeautifulSoup = BeautifulSoup(content, 'html.parser')
     except Exception:
         update.message.reply_text('''
         Login Failed!
@@ -138,6 +139,36 @@ def grade(update: Update, context: CallbackContext) -> None:
         return
     try:
         try:
+            soup: BeautifulSoup = BeautifulSoup(loged, 'html.parser')
+            datas: list = [row.text.strip() for row in soup.table]
+            free_list: list = [data for data in datas if not data == '']
+            arr: list = [string.split('\n') for string in free_list]
+            dictionary: dict = {}
+            for sub_array in arr:
+                dictionary[sub_array[0]] = sub_array[1]
+            image = soup.find('img', {'class': 'img-rounded'})
+            image = image['src']
+            pre_text = 'https://portal.aau.edu.et/'
+            image = pre_text+image
+
+            user_name = dictionary['Full Name ']
+            user_id = dictionary['ID No. ']
+            department = dictionary['Department ']
+            year = dictionary["Year "]
+            update.message.reply_photo(
+                image, 'Full Name : '+user_name+'\n'+'ID No. : '+user_id +
+                '\n'+'Department : '+department+'\n'+"Year : "+year
+            )
+        except Exception:
+            update.message.reply_text(
+                'Your profile was not found!')
+            return
+        try:
+            update.message.reply_text("Grade Report..")
+            request = browser.click_link(url="/Grade/GradeReport")
+            browser.open(request)
+            content = (browser.response().read())
+            soup: BeautifulSoup = BeautifulSoup(content, 'html.parser')
             arra = [value.text.strip() for value in soup.find_all('td')]
             clean_array = [content.strip()
                            for content in arra if not 'Assessment' in content]
@@ -149,24 +180,7 @@ def grade(update: Update, context: CallbackContext) -> None:
                 update.message.reply_text(value)
         except Exception:
             update.message.reply_text(
-                'Grade report was not found!')
-        try:
-            request = browser.click_link(url="/Home")
-            browser.open(request)
-            content = (browser.response().read())
-            soup: BeautifulSoup = BeautifulSoup(content, 'html.parser')
-            datas: list = [row.text.strip() for row in soup.table]
-            free_list: list = [data for data in datas if not data == '']
-            arr: list = [string.split('\n') for string in free_list]
-            dictionary: dict = {}
-            for sub_array in arr:
-                dictionary[sub_array[0]] = sub_array[1]
-            update.message.reply_text(
-                dictionary
-            )
-        except Exception:
-            update.message.reply_text(
-                "Report was Not found!"
+                "Your Grde Report was not found!"
             )
             return
 
