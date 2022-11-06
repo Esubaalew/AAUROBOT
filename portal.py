@@ -27,19 +27,19 @@ def grade(update: Update, context: CallbackContext) -> None:
 
     userP: str = update.message.text
     userP: str = userP.strip()
-    space = ' '
+    space: str = ' '
     if space in userP:
         userP = userP.replace(space, '')
     if not len(userP) == 16:
         if len(userP) < 16:
             update.message.reply_text(
-                str(16-len(userP)) + ' char(s) omitted. Coud you please re-enter?',
+                str(16-len(userP)) + ' char/s omitted. Coud you please re-enter?',
                 quote=True)
             return
         elif len(userP) > 16:
             update.message.reply_text(
                 str(len(userP)-16) +
-                ' char(s) are mis-included.Coud you please re-enter?',
+                ' char/s are mis-included.Coud you please re-enter?',
                 quote=True)
             return
     if not '&' in userP:
@@ -59,21 +59,21 @@ def grade(update: Update, context: CallbackContext) -> None:
         pass
     if not userP[3] == '/':
         update.message.reply_text(
-            '/ omitted at UGR ?. Re-enter as UGR/ ...'
+            '/ is not in its legal position. Please re-enter..'
         )
         return
     else:
         pass
     if not userP[8] == '/':
         update.message.reply_text(
-            '/ omitted at UGR/1234?. Re-enter as UGR/1234/ ...'
+            '/ is not in its legal position. Please re-enter..'
         )
         return
     else:
         pass
     if not userP[11] == '&':
         update.message.reply_text(
-            '& omitted at UGR/fourdigit/12?pass. Re-enter as UGR/1234/12&Password...'
+            '& is not in its legal position. Please Re-enter..'
         )
         return
     else:
@@ -129,10 +129,13 @@ def grade(update: Update, context: CallbackContext) -> None:
         content = (browser.response().read())
         soup: BeautifulSoup = BeautifulSoup(content, 'html.parser')
     except Exception:
-        update.message.reply_text(
-            "Loging In failed !!.Caused by website crash"
-        )
-
+        update.message.reply_text('''
+        Login Failed!
+        Causes might be:
+        The user name was not found!
+        The website was crashed!
+        ''')
+        return
     try:
         try:
             arra = [value.text.strip() for value in soup.find_all('td')]
@@ -165,9 +168,10 @@ def grade(update: Update, context: CallbackContext) -> None:
             update.message.reply_text(
                 "Report was Not found!"
             )
+            return
 
     except Exception:
-        update.message.text('Something went wrong! Please try later.')
+        update.message.reply_text('Something went wrong! Please try later.')
 
 
 def start(update: Update, context: CallbackContext) -> None:
@@ -312,7 +316,7 @@ def filter_documents(update: Update, context: CallbackContext):
 
 
 def main() -> None:
-    TOKEN: str = '5725520658:AAGaChHk1Tj2lPGxU8ZQWMdFNTxgs9hstVg'
+    TOKEN: str = 'TOKEN'
     updater = Updater(TOKEN,
                       use_context=True)
     updater.dispatcher.add_handler(CommandHandler('start', start))
