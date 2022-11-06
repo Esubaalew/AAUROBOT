@@ -176,7 +176,12 @@ def grade(update: Update, context: CallbackContext) -> None:
                                 '7', '9', '2.00', '3.00', '4.00', '5.00']
             clean_list = [
                 value for value in clean_array if not value in unwanted_strings]
+            list_length = len(clean_list)
+            count = 0
             for value in clean_list:
+                count = count+1
+                if count == list_length:
+                    value = value+'\n\n  This bot was Made by @Esubaalew'
                 update.message.reply_text(value)
         except Exception:
             update.message.reply_text(
