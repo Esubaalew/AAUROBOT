@@ -249,6 +249,8 @@ def grade(update: Update, context: CallbackContext) -> None:
 
 
 def policy(update: Update, context: CallbackContext) -> None:
+    """Tells user a message about how the bot handels user data"""
+    
     user: str = update.message.from_user.first_name
     update.message.reply_text(f"""
 Hello dear {user}, 
@@ -413,7 +415,7 @@ def main() -> None:
     updater.dispatcher.add_handler(CommandHandler('start', start))
     updater.dispatcher.add_handler(MessageHandler(
         Filters.text & (~Filters.command), grade))
-    updater.dispatcher.add_handler(CommandHandler('policy'))
+    updater.dispatcher.add_handler(CommandHandler('policy',policy))
     updater.dispatcher.add_handler(
         MessageHandler(Filters.contact, filter_contacts))
     updater.dispatcher.add_handler(
