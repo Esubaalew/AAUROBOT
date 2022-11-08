@@ -38,11 +38,9 @@ def grade(update: Update, context: CallbackContext) -> None:
 
     ID No: UGR/1234/12
     Password: 1234
+    
      Easy problems:
-
     If user send shorter or longer ID&password combination than needed, or if user 
-
-
 
      Hard Problems:
     The login request may fail due to many resons. If the ID No is correct and
