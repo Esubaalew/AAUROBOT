@@ -1,45 +1,80 @@
 # portal.py
 """
-This module is all about AAU University students who want to know thier grade 
-reports faster than normal.
-From my experiance of using the AAU Portal, it is bulky to open browser and look for
-grade report using a fair network connection. The content can't load faster and
-some say the portal gets worse as we get far from the campus i don't buy their
-idea though. So i decided to find a way  for a faster and easy GRADE REPORT.
-this module  is about creatin a telegram bot that  opens and extacts the relevant 
-data from the portal.
-This robot will add new feautures evey day.
+This code  is aimed at designing a telegram bot(@AAU_Robot) for getting Grade reports 
+and Profile informations for AAU students in a more faster way.
+This bot cosidered many mistakes students may make: like unwanted space, omitted / or &
+and shorter or longer username&password. Considering these common mistakes the bot will
+not try to log in with these input to avoid account lock. 
+This code wasn't able to perform what it is now performing with out the presence of:
+1. Mechanize: for sign in and returning the response object of the website.
+2. BeautifulSoup4: for extracting the important datas from the html response.
+3. Python-telegram-bot(PTB): for communicating with telegram servers.
+You have no idea how much time PTB saved for me.
 """
 from mechanize import Browser
-from bs4 import BeautifulSoup
+from bs4 import (
+    BeautifulSoup,
+    Tag
+)
 from telegram import Update
-from telegram.ext import (CallbackContext, CommandHandler, Filters,
-                          MessageHandler)
-from telegram.ext.updater import Updater
+from telegram.ext import (
+    CallbackContext,
+    CommandHandler,
+    Filters,
+    MessageHandler,
+    Updater
+)
 
 
 def grade(update: Update, context: CallbackContext) -> None:
-    """Gets the grade report and profile information of AAU student
-    This function first will be invoked anytime the user enters a text message
+    """
+    This function is the main part of @AAU_Robot.
+    It gets the grade report and profile information of AAU student. This function 
+    will be invoked anytime the user sends a text message.
     The function though will be happy only if it gets text like-
-    UGR/1234/12&1234
+    UGR/1234/12&1234.
+     Note:
+    The bot will understand the above input as:
+
+    ID No: UGR/1234/12
+    Password: 1234
+     Easy problems:
+
+    If user send shorter or longer ID&password combination than needed, or if user 
+
+
+
+     Hard Problems:
+    The login request may fail due to many resons. If the ID No is correct and
+    the password is wrong, the user will be  warned four times and the account will get
+    locked after four wrong  attempts totaly with 5 worng inputs.
+    If the username is wrong(not found, expired), user will get 'Incorrect username or password.' 
+    warning message.
+    And more badly if the website stop working, the login failed message will arrive.
+
+    "Your Grade Report was not found!" message may also arrive if the grade report field is
+    empty.(May be this is on the first year first semester)
+
+
+
     """
 
     userP: str = update.message.text
-    userP: str = userP.strip()
+    userP = userP.strip()
     space: str = ' '
     if space in userP:
         userP = userP.replace(space, '')
     if not len(userP) == 16:
         if len(userP) < 16:
             update.message.reply_text(
-                str(16-len(userP)) + ' char/s omitted. Coud you please re-enter?',
+                str(16-len(userP)) +
+                ' char(s) omitted. Coud you please re-enter?',
                 quote=True)
             return
         elif len(userP) > 16:
             update.message.reply_text(
                 str(len(userP)-16) +
-                ' char/s are mis-included.Coud you please re-enter?',
+                ' char(s) are mis-included.Coud you please re-enter?',
                 quote=True)
             return
     if not '&' in userP:
@@ -51,7 +86,7 @@ def grade(update: Update, context: CallbackContext) -> None:
         pass
     if not '/' in userP:
         update.message.reply_text(
-            '/ character is omitted. A student username is like UGR/1234/12.\
+            f'/ character is omitted. A student username is like UGR/1234/12.\
                 re-enter.'
         )
         return
@@ -87,7 +122,9 @@ def grade(update: Update, context: CallbackContext) -> None:
         browser: Browser = Browser()
         browser.set_handle_redirect(True)
         browser.set_handle_robots(False)
-        update.message.reply_text('Please wait...', quote=True)
+        update.message.reply_text(
+            'I am working on it. Please wait...',
+            quote=True)
         browser.open(url)
         browser.select_form(nr=0)
         browser.addheaders: list = [('User-agent', 'Mozilla/104.0.2')]
@@ -132,60 +169,62 @@ def grade(update: Update, context: CallbackContext) -> None:
     except Exception:
         update.message.reply_text('''
         Login Failed!
-        Causes might be:
-        The user name was not found!
+        This is most probably because:
         The website was crashed!
         ''')
         return
     try:
         try:
-            soup: BeautifulSoup = BeautifulSoup(loged, 'html.parser')
+            soup = BeautifulSoup(loged, 'html.parser')
             datas: list = [row.text.strip() for row in soup.table]
             free_list: list = [data for data in datas if not data == '']
             arr: list = [string.split('\n') for string in free_list]
             dictionary: dict = {}
             for sub_array in arr:
                 dictionary[sub_array[0]] = sub_array[1]
-            image = soup.find('img', {'class': 'img-rounded'})
-            image = image['src']
-            pre_text = 'https://portal.aau.edu.et/'
-            image = pre_text+image
+            image: Tag = soup.find('img', {'class': 'img-rounded'})
+            image: str = image['src']
+            pre_text: str = 'https://portal.aau.edu.et/'
+            image: str = pre_text+image
 
-            user_name = dictionary['Full Name ']
-            user_id = dictionary['ID No. ']
-            department = dictionary['Department ']
-            year = dictionary["Year "]
+            user_name: str = dictionary['Full Name ']
+            user_id: str = dictionary['ID No. ']
+            department: str = dictionary['Department ']
+            year: str = dictionary["Year "]
             update.message.reply_photo(
-                image, 'Full Name : '+user_name+'\n'+'ID No. : '+user_id +
+                image,
+                'Full Name : '+user_name+'\n'+'ID No. : '+user_id +
                 '\n'+'Department : '+department+'\n'+"Year : "+year
             )
         except Exception:
             update.message.reply_text(
-                'Your profile was not found!')
+                'Your profile was not found!'
+            )
             return
         try:
             update.message.reply_text("Grade Report..")
             request = browser.click_link(url="/Grade/GradeReport")
             browser.open(request)
-            content = (browser.response().read())
-            soup: BeautifulSoup = BeautifulSoup(content, 'html.parser')
-            arra = [value.text.strip() for value in soup.find_all('td')]
-            clean_array = [content.strip()
-                           for content in arra if not 'Assessment' in content]
-            unwanted_strings = ['1', '2', '3', '4', '5', '6',
-                                '7', '9', '2.00', '3.00', '4.00', '5.00']
-            clean_list = [
-                value for value in clean_array if not value in unwanted_strings]
-            list_length = len(clean_list)
-            count = 0
-            for value in clean_list:
+            content: bytes = (browser.response().read())
+            soup = BeautifulSoup(content, 'html.parser')
+            all_texts_list: list = [value.text.strip()
+                                    for value in soup.find_all('td')]
+            clean_list: list = [content.strip()
+                                for content in all_texts_list if not 'Assessment' in content]
+            unwanted_strings: list = ['1', '2', '3', '4', '5', '6',
+                                      '7', '9', '2.00', '3.00', '4.00', '5.00']
+            very_clean_list: list = [
+                value for value in clean_list if not value in unwanted_strings]
+            list_length: int = len(very_clean_list)
+            count: int = 0
+            for string in very_clean_list:
                 count = count+1
                 if count == list_length:
-                    value = value+'\n\n  This bot was Made by @Esubaalew'
-                update.message.reply_text(value)
+                    string: str = string+'\n\n  This bot was Made by @Esubaalew'
+                update.message.reply_text(string)
         except Exception:
             update.message.reply_text(
-                "Your Grde Report was not found!"
+                "Your Grade Report was not found!"
             )
             return
 
@@ -197,137 +236,139 @@ def start(update: Update, context: CallbackContext) -> None:
     """Starts the conversation with effective user.
     this function will be invoked everytime user hits /start
     """
-    username = update.message.from_user.first_name
-    greet = 'Selam, '+username + "!!"
-
+    username: str = update.message.from_user.first_name
+    greet: str = f'Selam, {username}!!'
     update.message.reply_text(
-        greet + '\nI am AAU Robot! I was made to get your Grade report from THE AAU PORTAL!'
+        f'{greet}\nI am AAU Robot! I was made to get your Grade report from THE AAU PORTAL!'
     )
     update.message.reply_text(
-        "Now, Send me the USERNAME and PASSWORD as USERNAME&PASSWORD\n \
+        "Now, Send me the USERNAME and PASSWORD as USERNAME&PASSWORD\n\
         Example: UGR/1234/12&8921"
     )
 
 
 def bad_command(update: Update, context: CallbackContext) -> None:
+    '''Detects unkown commands and tells user that robot don't understand '''
     update.message.reply_text(
         "Sorry,  '%s' is not a valid command! use /start to restart me!" % update.message.text
     )
 
 
-def filter_photos(update: Update, context: CallbackContext):
+def filter_photos(update: Update, context: CallbackContext) -> None:
     """Detects photos from user and tells to user that robot can not search
     for photos"""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Photos/Images!", quote=True
+        f"Dear {user}, Currently, I don't search for Photos/Images!",
+        quote=True
     )
 
 
-def filter_videos(update: Update, context: CallbackContext):
+def filter_videos(update: Update, context: CallbackContext) -> None:
     """Detects videos received from user and tells to user that robot can not search
     for videos"""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Videos", quote=True
+        f"Dear {user}, Currently, I don't search for Videos",
+        quote=True
     )
 
 
-def filter_contacts(update: Update, context: CallbackContext):
+def filter_contacts(update: Update, context: CallbackContext) -> None:
     """Detects contacts received from user and tells to user that robot can not search
     for contats"""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't search for Contacts or Contacts are useless for me",
         quote=True
     )
 
 
-def filter_polls(update: Update, context: CallbackContext):
+def filter_polls(update: Update, context: CallbackContext) -> None:
     """Detects polls received from user and tells to user that robot can not search
     for polls"""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't need polls or i don't search for them!",
         quote=True
     )
 
 
-def filter_captions(update: Update, context: CallbackContext):
+def filter_captions(update: Update, context: CallbackContext) -> None:
     """Detects captions received from user and tells to user that robot can not search
     for captions."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't need captions for my work or i don't search for them!",
         quote=True
     )
 
 
-def filter_stickers(update: Update, context: CallbackContext):
+def filter_stickers(update: Update, context: CallbackContext) -> None:
     """Detects stickers received from user and tells to user that robot can not search
     for stickers."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't search for Stickers!",
         quote=True
     )
 
 
-def filter_animations(update: Update, context: CallbackContext):
+def filter_animations(update: Update, context: CallbackContext) -> None:
     """Detects animations received from user and tells to user that robot can not search
     for animations."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't search for animations!",
         quote=True
     )
 
 
-def filter_attachments(update: Update, context: CallbackContext):
+def filter_attachments(update: Update, context: CallbackContext) -> None:
     """Detects attachiments received from user and tells to user that robot can not search
     for attachments."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't search for attachments!",
         quote=True
     )
 
 
-def filter_audios(update: Update, context: CallbackContext):
+def filter_audios(update: Update, context: CallbackContext) -> None:
     """Detects audios received from user and tells to user that robot can not search
     for audios."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently, I don't search for Audios!",
         quote=True
     )
 
 
-def filter_dice(update: Update, context: CallbackContext):
+def filter_dice(update: Update, context: CallbackContext) -> None:
     """Detects dice received from user and tells to user that robot can not search
     for dice."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Dice is beyound my knowlege!",
         quote=True
     )
 
 
-def filter_documents(update: Update, context: CallbackContext):
-    """Detects documents received from user and tells to user that robot can not search
-    for doucuments."""
+def filter_documents(update: Update, context: CallbackContext) -> None:
+    """Detects documents received from user and tells to user that the robot can not search
+    for documents."""
 
-    user = update.message.from_user.first_name
+    user: str = update.message.from_user.first_name
     update.message.reply_text(
         f"Dear {user}, Currently I am incapable of searching documents!",
         quote=True
@@ -335,7 +376,7 @@ def filter_documents(update: Update, context: CallbackContext):
 
 
 def main() -> None:
-    TOKEN: str = 'TOKEN'
+    TOKEN: str = '5725520658:AAGaChHk1Tj2lPGxU8ZQWMdFNTxgs9hstVg'
     updater = Updater(TOKEN,
                       use_context=True)
     updater.dispatcher.add_handler(CommandHandler('start', start))
