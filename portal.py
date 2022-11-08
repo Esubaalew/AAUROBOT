@@ -281,7 +281,7 @@ def start(update: Update, context: CallbackContext) -> None:
 def bad_command(update: Update, context: CallbackContext) -> None:
     '''Detects unkown commands and tells user that robot don't understand '''
     update.message.reply_text(
-        "Sorry,  '%s' is not a valid command! use /start to restart me!" % update.message.text
+        "Sorry,  '%s' is not a valid command! use /start to restart me or /policy to know how I use your data!" % update.message.text
     )
 
 
