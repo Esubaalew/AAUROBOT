@@ -87,7 +87,7 @@ def grade(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(
             '/ character is omitted. A student username is like UGR/1234/12.\
                 re-enter.',
-                quote=True
+            quote=True
         )
         return
     else:
@@ -136,7 +136,13 @@ def grade(update: Update, context: CallbackContext) -> None:
         loged = browser.submit()
         loged = browser.response().read()
         soup: BeautifulSoup = BeautifulSoup(loged, 'html.parser')
-        if 'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.' in soup.text:
+        if 'Incorrect username or password.' in soup.text:
+            update.message.reply_text(
+                'Incorrect username or password.',
+                quote=True
+            )
+            return
+        elif 'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.' in soup.text:
             update.message.reply_text(
                 'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.',
                 quote=True
@@ -172,14 +178,9 @@ def grade(update: Update, context: CallbackContext) -> None:
                 quote=True
             )
             return
-        elif 'Incorrect username or password.' in soup.text:
-            update.message.reply_text(
-                'Incorrect username or password.',
-                qoute=True
-            )
-            return
         else:
             pass
+
     except Exception:
         update.message.reply_text('''
         Login Failed!
