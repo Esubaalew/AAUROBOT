@@ -248,6 +248,21 @@ def grade(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Something went wrong! Please try later.')
 
 
+def policy(update: Update, context: CallbackContext) -> None:
+    user: str = update.message.from_user.first_name
+    update.message.reply_text(f"""
+Hello dear {user}, 
+As the age is technological, most of us are the users of the technology. 
+It is clear that as technology becomes more sophisticated, so does theft and fraud.
+However, @AAU_Robot aims to send student information the moment the student ID 
+and password are sent to it, and cannot remember and/or store any information.
+Therefore, we remind you that anyone can freely send his/her ID and password and view Grade Report.
+If you want to be sure that @AAU_Robot doesn't store your data, you can ask for the source code
+at @Esubaalew.
+    """
+                              )
+
+
 def start(update: Update, context: CallbackContext) -> None:
     """Starts the conversation with effective user.
     this function will be invoked everytime user hits /start
@@ -398,6 +413,7 @@ def main() -> None:
     updater.dispatcher.add_handler(CommandHandler('start', start))
     updater.dispatcher.add_handler(MessageHandler(
         Filters.text & (~Filters.command), grade))
+    updater.dispatcher.add_handler(CommandHandler('policy'))
     updater.dispatcher.add_handler(
         MessageHandler(Filters.contact, filter_contacts))
     updater.dispatcher.add_handler(
