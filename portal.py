@@ -135,28 +135,38 @@ def grade(update: Update, context: CallbackContext) -> None:
         soup: BeautifulSoup = BeautifulSoup(loged, 'html.parser')
         if 'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.' in soup.text:
             update.message.reply_text(
-                'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.'
+                'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.',
+                quote=True
             )
             return
         elif 'Invalid credentials. You have 3 more attempt(s) before your account gets locked out.' in soup.text:
             update.message.reply_text(
-                'Invalid credentials. You have 3 more attempt(s) before your account gets locked out.')
+                'Invalid credentials. You have 3 more attempt(s) before your account gets locked out.',
+                quote=True
+            )
             return
         elif 'Invalid credentials. You have 2 more attempt(s) before your account gets locked out.' in soup.text:
             update.message.reply_text(
-                'Invalid credentials. You have 2 more attempt(s) before your account gets locked out.')
+                'Invalid credentials. You have 2 more attempt(s) before your account gets locked out.',
+                quote=True
+            )
             return
         elif 'Invalid credentials. You have 1 more attempt(s) before your account gets locked out.' in soup.text:
             update.message.reply_text(
-                'Invalid credentials. You have 1 more attempt(s) before your account gets locked out.')
+                'Invalid credentials. You have 1 more attempt(s) before your account gets locked out.',
+                quote=True
+            )
             return
         elif 'Your account has been locked out for 15 minutes due to multiple failed login attempts.' in soup.text:
             update.message.reply_text(
-                'Your account has been locked out for 15 minutes due to multiple failed login attempts.')
+                'Your account has been locked out for 15 minutes due to multiple failed login attempts.',
+                quote=True
+            )
             return
         elif 'Your account has been locked out due to multiple failed login attempts.' in soup.text:
             update.message.reply_text(
-                'Your account has been locked out due to multiple failed login attempts.'
+                'Your account has been locked out due to multiple failed login attempts.',
+                quote=True
             )
             return
         elif 'Incorrect username or password.' in soup.text:
@@ -192,6 +202,7 @@ def grade(update: Update, context: CallbackContext) -> None:
             user_id: str = dictionary['ID No. ']
             department: str = dictionary['Department ']
             year: str = dictionary["Year "]
+            update.message.reply_text(f"{user_name}'s Profile 👇")
             update.message.reply_photo(
                 image,
                 'Full Name : '+user_name+'\n'+'ID No. : '+user_id +
@@ -203,7 +214,7 @@ def grade(update: Update, context: CallbackContext) -> None:
             )
             return
         try:
-            update.message.reply_text("Grade Report..")
+            update.message.reply_text("Grade Report 👇")
             request = browser.click_link(url="/Grade/GradeReport")
             browser.open(request)
             content: bytes = (browser.response().read())
@@ -377,7 +388,7 @@ def filter_documents(update: Update, context: CallbackContext) -> None:
 
 
 def main() -> None:
-    TOKEN: str = '5725520658:AAGaChHk1Tj2lPGxU8ZQWMdFNTxgs9hstVg'
+    TOKEN: str = 'TOKEN'
     updater = Updater(TOKEN,
                       use_context=True)
     updater.dispatcher.add_handler(CommandHandler('start', start))
