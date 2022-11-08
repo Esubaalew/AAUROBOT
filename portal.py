@@ -38,7 +38,7 @@ def grade(update: Update, context: CallbackContext) -> None:
 
     ID No: UGR/1234/12
     Password: 1234
-    
+
      Easy problems:
     If user send shorter or longer ID&password combination than needed, or if user 
 
@@ -77,36 +77,41 @@ def grade(update: Update, context: CallbackContext) -> None:
             return
     if not '&' in userP:
         update.message.reply_text(
-            '& is a must. re- enter with &. Example: UGR/1234/12&8921'
+            '& is a must. re- enter with &. Example: UGR/1234/12&8921',
+            quote=True
         )
         return
     else:
         pass
     if not '/' in userP:
         update.message.reply_text(
-            f'/ character is omitted. A student username is like UGR/1234/12.\
-                re-enter.'
+            '/ character is omitted. A student username is like UGR/1234/12.\
+                re-enter.',
+                quote=True
         )
         return
     else:
         pass
     if not userP[3] == '/':
         update.message.reply_text(
-            '/ is not in its legal position. Please re-enter..'
+            '/ is not in its legal position. Please re-enter..',
+            quote=True
         )
         return
     else:
         pass
     if not userP[8] == '/':
         update.message.reply_text(
-            '/ is not in its legal position. Please re-enter..'
+            '/ is not in its legal position. Please re-enter..',
+            quote=True
         )
         return
     else:
         pass
     if not userP[11] == '&':
         update.message.reply_text(
-            '& is not in its legal position. Please Re-enter..'
+            '& is not in its legal position. Please Re-enter..',
+            quote=True
         )
         return
     else:
