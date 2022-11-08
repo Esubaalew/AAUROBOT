@@ -158,6 +158,7 @@ def grade(update: Update, context: CallbackContext) -> None:
             update.message.reply_text(
                 'Your account has been locked out due to multiple failed login attempts.'
             )
+            return
         elif 'Incorrect username or password.' in soup.text:
             update.message.reply_text(
                 'Incorrect username or password.',
