@@ -47,7 +47,7 @@ def grade(update: Update, context: CallbackContext) -> None:
     '&'  and /or mis-position them, different warnings will arrive.
 
      Hard Problems:
-    The problems are problems that terminate the login process after the robot
+    These problems are problems that terminate the login process after the robot
     tried to log in the website. These problems may terminate the login process, block account 
     holder from using the portal(Many wrong password inputs)
     
