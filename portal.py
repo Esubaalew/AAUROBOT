@@ -40,18 +40,24 @@ def grade(update: Update, context: CallbackContext) -> None:
     Password: 1234
 
      Easy problems:
-    If user send shorter or longer ID&password combination than needed, or if user 
+    These problems are problems that make robot reject the input before accessing
+    the website. Website blockage will never happen 
+    
+    If user send shorter or longer ID&password combination than needed, or if user omitted '/'  and/or
+    '&'  and /or mis-position them, different warnings will arrive.
 
      Hard Problems:
-    The login request may fail due to many resons. If the ID No is correct and
-    the password is wrong, the user will be  warned four times and the account will get
+    The problems are problems that terminate the login process after the robot
+    tried to log in the website. These problems may terminate the login process, block account 
+    holder from using the portal(Many wrong password inputs)
+    
+    The login request may fail due to many resons. If the {ID No} is correct and
+    the {password} is wrong, the user will be  warned four times and the account will get
     locked after four wrong  attempts totaly with 5 worng inputs.
-    If the username is wrong(not found, expired), user will get 'Incorrect username or password.' 
-    warning message.
-    And more badly if the website stop working, the login failed message will arrive.
-
-    "Your Grade Report was not found!" message may also arrive if the grade report field is
-    empty.(May be this is on the first year first semester)
+    
+    If the username is wrong(not found, expired), user will get 'Incorrect username or password.' warning message.
+    And more badly if the website stop working, the login failed message will arrive. This problem may is not a common problem.
+    "Your Grade Report was not found!" message may also arrive if the grade report field is empty.(May be this is on the first year first semester)
 
 
 
