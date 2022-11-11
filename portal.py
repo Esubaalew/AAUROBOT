@@ -233,8 +233,8 @@ def grade(update: Update, context: CallbackContext) -> None:
                                     for value in soup.find_all('td')]
             clean_list: list = [content.strip()
                                 for content in all_texts_list if not 'Assessment' in content]
-            unwanted_strings: list = ['1', '2', '3', '4', '5', '6',
-                                      '7', '9', '2.00', '3.00', '4.00', '5.00']
+            unwanted_strings: tuple = ('1', '2', '3', '4', '5', '6',
+                                      '7', '8','9', '2.00', '3.00', '4.00', '5.00')
             very_clean_list: list = [
                 value for value in clean_list if not value in unwanted_strings]
             list_length: int = len(very_clean_list)
