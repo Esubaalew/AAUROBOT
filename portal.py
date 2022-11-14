@@ -68,34 +68,32 @@ def grade(update: Update, context: CallbackContext) -> None:
     space: str = ' '
     if space in userP:
         userP = userP.replace(space, '')
-    if not len(userP) == 16:
-        if len(userP) < 16:
-            update.message.reply_text(
-                str(16-len(userP)) +
-                ' char(s) omitted. Coud you please re-enter?',
-                quote=True)
-            return
-        elif len(userP) > 16:
-            update.message.reply_text(
-                str(len(userP)-16) +
-                ' char(s) are mis-included.Coud you please re-enter?',
-                quote=True)
-            return
-    if not '&' in userP:
-        update.message.reply_text(
-            '& is a must. re- enter with &. Example: UGR/1234/12&8921',
-            quote=True
-        )
-        return
     else:
         pass
-    if not '/' in userP:
+    if len(userP) < 16:
         update.message.reply_text(
-            '/ character is omitted. A student username is like UGR/1234/12.\
-                re-enter.',
-            quote=True
+            f"The length of your ID No & Password '{userP}' is too short!!"
         )
         return
+    if not '/' in userP and not '&' in userP:
+        update.message.reply_text(
+            "You omitted '&' and '/'"
+        )
+        return
+    elif not '/' in userP or not '&' in userP:
+        if not '/' in userP:
+            update.message.reply_text(
+                '/ character is omitted. A student username is like UGR/zyxz/12.\
+                re-enter.',
+                quote=True
+            )
+            return
+        elif not '&' in userP:
+            update.message.reply_text(
+                '& is a must. re- enter with &. Example: UGR/abcd/12&8921',
+                quote=True
+            )
+            return
     else:
         pass
     if not userP[3] == '/':
@@ -122,7 +120,6 @@ def grade(update: Update, context: CallbackContext) -> None:
         return
     else:
         pass
-
     userPass: str = userP.split('&')
     username: str = userPass[0]
     password: str = userPass[1]
@@ -281,8 +278,8 @@ def start(update: Update, context: CallbackContext) -> None:
         f'{greet}\nI am AAU Robot! I was made to get your Grade report from THE AAU PORTAL!'
     )
     update.message.reply_text(
-        "Now, Send me the USERNAME and PASSWORD as USERNAME&PASSWORD\n\
-        Example: UGR/1234/12&8921"
+        "Now, Send me the USERNAME and PASSWORD as IDNUMBER&PASSWORD\n\
+        Example: UGR/abcd/12&8921"
     )
 
 
