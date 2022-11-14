@@ -32,11 +32,11 @@ def grade(update: Update, context: CallbackContext) -> None:
     It gets the grade report and profile information of AAU student. This function 
     will be invoked anytime the user sends a text message.
     The function though will be happy only if it gets text like-
-    UGR/1234/12&1234.
+    UGR/abcd/12&1234.
      Note:
     The bot will understand the above input as:
 
-    ID No: UGR/1234/12
+    ID No: UGR/abcd/12
     Password: 1234
 
      Easy problems:
