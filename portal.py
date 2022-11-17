@@ -351,7 +351,7 @@ If your Id No and password is 'UGR/xyzw/11' and '1234' respectively,\
         return
     else:
         pass
-    userP = userP.strip()
+    userP = userP.strip().upper()
     space: str = ' '
     if space in userP:
         userP = userP.replace(space, '')
