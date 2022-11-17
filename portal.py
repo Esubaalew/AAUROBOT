@@ -255,17 +255,27 @@ def policy(update: Update, context: CallbackContext) -> None:
     """Tells user a message about how the bot handels user data"""
     
     user: str = update.message.from_user.first_name
-    update.message.reply_text(f"""
-Hello dear {user}, 
+    url = 'https://website.informer.com/portal.eiabc.edu.et'
+    web_content = requests.get(url)
+    beauty = BeautifulSoup(web_content.content, 'html.parser')
+    photo_conatiner = beauty.find(
+        'img',
+        {"class": "screenshotDefaultSize screenshotLoading",
+         'title': "Portal.eiabc.edu.et thumbnail",
+         "alt": "Portal.eiabc.edu.et thumbnail"
+         })
+    photo_address: str = photo_conatiner['src']
+    update.message.reply_photo(
+        photo_address,
+        f"""Hello dear {user}, 
 As the age is technological, most of us are the users of the technology. 
 It is clear that as technology becomes more sophisticated, so does theft and fraud.
 However, @AAU_Robot aims to send student information the moment the student ID 
 and password are sent to it, and cannot remember and/or store any information.
 Therefore, we remind you that anyone can freely send his/her ID and password and view Grade Report.
 If you want to be sure that @AAU_Robot doesn't store your data, you can ask for the source code
-at @Esubaalew.
-    """
-                              )
+from BOT DEVELOPER."""
+    )
 
 
 def start(update: Update, context: CallbackContext) -> None:
