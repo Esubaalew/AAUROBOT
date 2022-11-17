@@ -12,6 +12,8 @@ This code wasn't able to perform what it is now performing with out the presence
 You have no idea how much time PTB saved for me.
 """
 from mechanize import Browser
+import requests
+from requests import Response
 from bs4 import (
     BeautifulSoup,
     Tag
@@ -256,9 +258,9 @@ def policy(update: Update, context: CallbackContext) -> None:
     
     user: str = update.message.from_user.first_name
     url = 'https://website.informer.com/portal.eiabc.edu.et'
-    web_content = requests.get(url)
-    beauty = BeautifulSoup(web_content.content, 'html.parser')
-    photo_conatiner = beauty.find(
+    web_content:Response = requests.get(url)
+    beauty:BeautifulSoup = BeautifulSoup(web_content.content, 'html.parser')
+    photo_conatiner:Tag = beauty.find(
         'img',
         {"class": "screenshotDefaultSize screenshotLoading",
          'title': "Portal.eiabc.edu.et thumbnail",
