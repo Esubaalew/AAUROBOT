@@ -22,7 +22,7 @@ from telegram import (
     Update,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    CallbackQuery)
+)
 from telegram.ext import (
     CallbackContext,
     CommandHandler,
@@ -316,7 +316,9 @@ def grade(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user.first_name
     campus = detect_campus(update.message.text)
     if campus == aait:
-        update.message.reply_text(
+        aait_pict: str = 'aau.edu.et/aait/wp-content/uploads/sites/17/2014/08/5killo.jpg'
+        update.message.reply_photo(
+            aait_pict,
             f"""Dear AAiT student, {user}!
 
 To see your Profile and Grade report enter your credentials as 'aaityourid&yourpass'.
@@ -330,7 +332,9 @@ If your Id No and password is 'UGR/xyzw/11' and '1234' respectively,\
         )
         return
     if campus == aau:
-        update.message.reply_text(
+        aau_logo = 'http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png'
+        update.message.reply_photo(
+            aau_logo,
             f"""Dear AAU student, {user}!
 
 To see your Profile and Grade report enter your credentials as 'yourid&yourpass'.
