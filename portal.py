@@ -43,13 +43,15 @@ aau = 'AAU'
 
 
 def detect_campus(campus: str) -> str:
+    """Identify the campus the user will probably enter"""
+    
     if campus == aau:
         return aau
     elif campus == aait:
         return aait
 
 
-def grade_aait(update: Update, context: CallbackContext) -> None:
+def get_aait_report(update: Update, context: CallbackContext) -> None:
     """
     This function is is about scrping the AAit Portal.
     This function is the main part of @AAU_Robot.
@@ -278,7 +280,7 @@ def grade_aait(update: Update, context: CallbackContext) -> None:
         update.message.reply_text('Something went wrong! Please try later.')
 
 
-def grade(update: Update, context: CallbackContext) -> None:
+def get_aau_report(update: Update, context: CallbackContext) -> None:
     """
     This function is is about scraping the AAU Portal.
     This function is the main part of @AAU_Robot.
@@ -351,7 +353,7 @@ If your Id No and password is 'UGR/xyzw/11' and '1234' respectively,\
 
     userP: str = update.message.text
     if 'aait' in userP:
-        grade_aait(update, context)
+        get_aait_report(update, context)
         return
     else:
         pass
@@ -726,7 +728,7 @@ def main() -> None:
                       use_context=True)
     updater.dispatcher.add_handler(CommandHandler('start', start))
     updater.dispatcher.add_handler(MessageHandler(
-        Filters.text & (~Filters.command), grade))
+        Filters.text & (~Filters.command), get_aau_report))
     updater.dispatcher.add_handler(CommandHandler('policy', policy))
     updater.dispatcher.add_handler(
         MessageHandler(Filters.contact, filter_contacts))
