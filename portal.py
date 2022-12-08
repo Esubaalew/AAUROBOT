@@ -809,7 +809,7 @@ def start(update: Update, context: CallbackContext) -> None:
         reg_tg_id, reg_id, reg_name, reg_campus, reg_date = searchTable2(
             tg_id)
         update.message.reply_text(
-            "Welcome back %s!!\nSend your password to see your report or click the button of your choice!" % reg_name,
+            "Welcome back %s!!\nSend your password to see your report or click keyboard of your choice!" % reg_name,
 
             reply_markup=ReplyKeyboardMarkup(
                 loged_buttons,
