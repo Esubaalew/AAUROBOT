@@ -1,5 +1,5 @@
 # AAUROBOT
-Simple bot for grade report!!
+Simple Telegram bot for Addis Ababa University students for seeing grade report!!
 
 This code  is aimed at designing a telegram bot(@AAU_Robot) for getting Grade reports 
 and Profile informations for AAU students in a more faster way.
