@@ -96,3 +96,14 @@ def delete_from_table(key):
             cursor.execute(delete_row, (key,))
     except sqlite3.Error as e:
         print(e)
+
+def modify_idno(tg_id, new_idno) -> None:
+    """Modify the IDNO for a specific user based on TGID."""
+    try:
+        with sqlite3.connect('student.sql') as database:
+            cursor = database.cursor()
+            update_idno = """UPDATE Student SET IDNO=? WHERE TGID=?"""
+            cursor.execute(update_idno, (new_idno, tg_id))
+            database.commit()
+    except sqlite3.Error as e:
+        print(e)
