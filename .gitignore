@@ -1,2 +1,4 @@
-__pycache/
+.env
 botenv/
+student.sql
+__pycache__/
