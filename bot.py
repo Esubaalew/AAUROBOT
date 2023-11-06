@@ -1,5 +1,9 @@
 import re
 import random
+import math
+import requests
+from decouple import config
+from bs4 import BeautifulSoup
 from telegram import (
     KeyboardButton,
     ReplyKeyboardMarkup,
@@ -19,102 +23,136 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler
 )
-from database import search_table_by_tg_id, insert_data, create_table, delete_from_table
+from database import (
+    search_table_by_tg_id,
+    insert_data,
+    create_table,
+    delete_from_table,
+    modify_idno)
 from datetime import date
-from portal import login_to_portal, get_profile, get_grades
+from portal import (
+    login_to_portal,
+    get_profile,
+    get_grades)
 
 aait = 'AAIT'
 aau = 'AAU'
 eiabc = 'EIABC'
 
 
-loged_buttons = [
+LOGED_BUTTONS: list = [
     [KeyboardButton("Grade Report")],
     [KeyboardButton("View Profile")],
-    [KeyboardButton("Privacy Policy"), KeyboardButton("Delete Account")],
-    [KeyboardButton("Help"), KeyboardButton("About This Bot")],
-    [KeyboardButton("Statistics")]
-]
-logged_in_inline_buttons = [
-    [InlineKeyboardButton("View Profile", callback_data="view_profile")],
-    [InlineKeyboardButton("View Grade Report",
-                          callback_data="view_grade_report")],
-    [InlineKeyboardButton("Delete Account", callback_data="delete_account")]
-]
+    [KeyboardButton("Delete Account")],
 
+]
 AGREE, DISAGREE, CAMPUS, STUDENT_ID = range(4)
 GRADE_REPORT = range(4, 8)
+MATH_QUESTION, ACCOUNT_DELETED, ACCOUNT_NOT_DELETED = range(8, 11)
 
-CONFIRM_DELETE = range(8)
 
-# Handler to initiate the account deletion process
-def delete_account(update: Update, context: CallbackContext) -> int:
-    tg_id = update.message.from_user.id
-    registered = search_table_by_tg_id(tg_id)
+def is_user_id_valid(user_id: str) -> bool:
+    """
+    Checks if a user ID is valid based on a specific pattern.
 
-    if registered:
-        reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(tg_id)
+    Args:
+        user_id (str): The user ID to be validated.
 
-        # Generate a random math question and answer options
-        num1 = random.randint(1, 10)
-        num2 = random.randint(1, 10)
-        operator = random.choice(["+", "-", "*", "/"])
-        correct_answer = eval(f"{num1}{operator}{num2}")
-        
-        # Create three possible answer options with one correct answer
-        answer_options = [correct_answer]
-        while len(answer_options) < 3:
-            random_answer = random.randint(1, 100)
-            if random_answer not in answer_options:
-                answer_options.append(random_answer)
-
-        random.shuffle(answer_options)
-        options = [str(option) for option in answer_options]
-
-        # Create an inline keyboard with answer options
-        keyboard = [[InlineKeyboardButton(option, callback_data=option) for option in options]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # Ask the math question
-        question = f"What is {num1} {operator} {num2}?"
-        update.message.reply_text(question, reply_markup=reply_markup)
-
-        # Store the correct answer in user_data for later comparison
-        context.user_data['correct_answer'] = correct_answer
-        return CONFIRM_DELETE
-    else:
-        update.message.reply_text(
-            "Deleting account is not available for unregistered users. Register using /start first.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return ConversationHandler.END
-
-# Handler to confirm the account deletion
-def confirm_delete(update: Update, context: CallbackContext) -> int:
-    user_answer = int(update.callback_query.data)
-    correct_answer = context.user_data['correct_answer']
-
-    if user_answer == correct_answer:
-        tg_id = update.callback_query.message.chat_id
-        delete_from_table(tg_id)
-        update.callback_query.answer("Account deleted successfully.")
-    else:
-        update.callback_query.answer("Incorrect answer. Please try again later.")
-    
-    return ConversationHandler.END  # End the conversation
-
-def is_user_id_valid(user_id):
-    user_id = user_id.upper()
-
-    pattern = r'^[A-Z]{3}/\d{4}/\d{2}$'
-
+    Returns:
+        bool: True if the user ID is valid, False otherwise.
+    """
+    user_id: str = user_id.upper()  
+    pattern: str = r'^[A-Z]{3}/\d{4}/\d{2}' 
     if re.match(pattern, user_id):
         return True
     else:
         return False
 
 
+def generate_math_question() -> tuple:
+    """
+    Generates a random math question with two random numbers and an arithmetic operation.
+
+    Returns:
+        tuple: A tuple containing the math question (str) and the correct answer (int).
+    """
+    a: int = random.randint(1, 10)
+    b: int = random.randint(1, 10)
+    operation: str = random.choice(["+", "-", "*", "/"])
+    if operation == "+":
+        result: int = a + b
+    elif operation == "-":
+        result: int = a - b
+    elif operation == "*":
+        result: int = a * b
+    elif operation == "/":
+        result: int = a // b  # Integer division for simplicity
+    question: str = f"What is {a} {operation} {b}?"
+    return question, result
+
+
+def math_question(update: Update, context: CallbackContext) -> int:
+    """
+    Generates a math question and sends it to the user with answer options.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
+    question, correct_answer = generate_math_question()
+    answers = [correct_answer, correct_answer + 1, correct_answer - 1]
+    random.shuffle(answers)
+    keyboard = [[InlineKeyboardButton(str(answers[0]), callback_data="answer_" + str(answers[0])),
+                InlineKeyboardButton(
+                    str(answers[1]), callback_data="answer_" + str(answers[1])),
+                InlineKeyboardButton(str(answers[2]), callback_data="answer_" + str(answers[2]))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(question, reply_markup=reply_markup)
+    context.user_data['correct_answer'] = correct_answer
+
+    return ACCOUNT_DELETED
+
+def handle_math_answer(update: Update, context: CallbackContext) -> int:
+    """
+    Handles the user's answer to a math question.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
+    user_answer = int(update.callback_query.data.split('_')[1])
+    correct_answer = context.user_data.get('correct_answer')
+
+    if user_answer == correct_answer:
+        tg_id = update.callback_query.from_user.id
+        delete_from_table(tg_id)
+        update.callback_query.answer("Account deleted successfully!")
+        update.callback_query.message.reply_text(
+            "Your account has been deleted.", reply_markup=ReplyKeyboardRemove())
+        return ACCOUNT_DELETED
+    else:
+        update.callback_query.answer(
+            "Incorrect answer. Please try again later.")
+        return ACCOUNT_NOT_DELETED
+
+
 def ask_for_password(update: Update, context: CallbackContext) -> int:
+    """
+    Initiates the process of asking the user to enter a password to view the grade report.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     update.message.reply_text(
         "Please enter your password to view the grade report:",
         reply_markup=ReplyKeyboardRemove()
@@ -123,6 +161,16 @@ def ask_for_password(update: Update, context: CallbackContext) -> int:
 
 
 def get_password(update: Update, context: CallbackContext) -> int:
+    """
+    Handles the user's input of a password and initiates the process of retrieving and displaying the grade report.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     password = update.message.text
     tg_id = update.message.from_user.id
     registered = search_table_by_tg_id(tg_id)
@@ -131,13 +179,10 @@ def get_password(update: Update, context: CallbackContext) -> int:
         reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(
             tg_id)
 
-        # Send a "Working on it" message
-
         working_on_it_msg = update.message.reply_text("Working on it...")
         update.message.bot.send_chat_action(
             chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
-        # Perform the actual processing in the background
         profile = get_profile(
             campus=reg_campus, student_id=reg_id, password=password)
         grades = get_grades(campus=reg_campus,
@@ -179,13 +224,25 @@ def get_password(update: Update, context: CallbackContext) -> int:
 
     # Return to the main state
     reply_markup = ReplyKeyboardMarkup(
-        loged_buttons, resize_keyboard=True, one_time_keyboard=True)
+        LOGED_BUTTONS,
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder='What do you want?')
     update.message.reply_text(
         "Please choose an option:", reply_markup=reply_markup)
     return ConversationHandler.END
 
-
 def view_profile(update: Update, context: CallbackContext) -> int:
+    """
+    Displays the user's profile information.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     tg_id = update.message.from_user.id
     registered = search_table_by_tg_id(tg_id)
 
@@ -211,19 +268,40 @@ def view_profile(update: Update, context: CallbackContext) -> int:
             reply_markup=ReplyKeyboardRemove()
         )
 
-    return ConversationHandler.END  # End the conversation
+    # Return to the main state
+    reply_markup = ReplyKeyboardMarkup(
+        LOGED_BUTTONS,
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder='What do you want?')
+    update.message.reply_text(
+        "Please choose an option:", reply_markup=reply_markup)
+    return ConversationHandler.END
 
 
 def start(update: Update, context: CallbackContext) -> int:
+    """
+    Handles the start of the conversation and user registration.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     tg_id = update.message.from_user.id
     registered = search_table_by_tg_id(tg_id)
     if registered:
         reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(
             tg_id)
-        update.message.reply_text(
-            "Welcome back %s!!\nSend your password to see your report or click the button of your choice!" % reg_name,
+        update.message.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+        update.message.reply_photo(
+            "http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png",
+            caption="Welcome back %s!!\nSend your password to see your report or click the button of your choice!" % reg_name,
             reply_markup=ReplyKeyboardMarkup(
-                loged_buttons,
+                LOGED_BUTTONS,
                 resize_keyboard=True,
                 one_time_keyboard=True,
                 input_field_placeholder='What do you want?'
@@ -231,11 +309,17 @@ def start(update: Update, context: CallbackContext) -> int:
         )
         return ConversationHandler.END
     else:
-        message = '''Welcome to AAU Robot! Before you can use the bot, please read and agree to our terms and conditions.
+        message = '''Welcome to AAU Robot!\n Before you can use the bot, please read /policy and agree to our terms and conditions.
         '''
         keyboard = [[InlineKeyboardButton("AGREE", callback_data="agree")],
                     [InlineKeyboardButton("DISAGREE", callback_data="disagree")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+        update.message.reply_photo(
+            "http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png")
+        update.message.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         update.message.reply_text(
             message,
             reply_markup=reply_markup,
@@ -245,6 +329,16 @@ def start(update: Update, context: CallbackContext) -> int:
 
 
 def registration(update: Update, context: CallbackContext) -> int:
+    """
+    Handles the registration process, prompting the user to agree to terms and choose a campus.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     query = update.callback_query
     query.answer()
     chat_id = query.message.chat_id
@@ -274,6 +368,16 @@ def registration(update: Update, context: CallbackContext) -> int:
 
 
 def choose_campus(update: Update, context: CallbackContext) -> int:
+    """
+    Handles the selection of a campus during registration.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     query = update.callback_query
     query.answer()
     chat_id = query.message.chat_id
@@ -289,6 +393,16 @@ def choose_campus(update: Update, context: CallbackContext) -> int:
 
 
 def get_student_id(update: Update, context: CallbackContext) -> int:
+    """
+    Handles the user input of their student ID during registration.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The next state of the conversation.
+    """
     student_id = update.message.text
     context.user_data['student_id'] = student_id
     tg_id = update.message.from_user.id
@@ -304,7 +418,9 @@ def get_student_id(update: Update, context: CallbackContext) -> int:
 
         # Show loged_buttons keyboard
         reply_markup = ReplyKeyboardMarkup(
-            loged_buttons, resize_keyboard=True, one_time_keyboard=True)
+            LOGED_BUTTONS,
+            resize_keyboard=True,
+            one_time_keyboard=True)
         update.message.reply_text(
             "Please choose an option:", reply_markup=reply_markup)
         return ConversationHandler.END
@@ -314,9 +430,198 @@ def get_student_id(update: Update, context: CallbackContext) -> int:
         return STUDENT_ID
 
 
+def filter_photos(update: Update, context: CallbackContext) -> None:
+    """Detects photos from user and tells to user that robot can not search
+    for photos"""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for Photos/Images!",
+        quote=True
+    )
+
+
+def filter_videos(update: Update, context: CallbackContext) -> None:
+    """Detects videos received from user and tells to user that robot can not search
+    for videos"""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for Videos",
+        quote=True
+    )
+
+
+def filter_contacts(update: Update, context: CallbackContext) -> None:
+    """Detects contacts received from user and tells to user that robot can not search
+    for contats"""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for Contacts or Contacts are useless for me",
+        quote=True
+    )
+
+
+def filter_polls(update: Update, context: CallbackContext) -> None:
+    """Detects polls received from user and tells to user that robot can not search
+    for polls"""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't need polls or i don't search for them!",
+        quote=True
+    )
+
+
+def filter_captions(update: Update, context: CallbackContext) -> None:
+    """Detects captions received from user and tells to user that robot can not search
+    for captions."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't need captions for my work or i don't search for them!",
+        quote=True
+    )
+
+
+def filter_stickers(update: Update, context: CallbackContext) -> None:
+    """Detects stickers received from user and tells to user that robot can not search
+    for stickers."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for Stickers!",
+        quote=True
+    )
+
+
+def filter_animations(update: Update, context: CallbackContext) -> None:
+    """Detects animations received from user and tells to user that robot can not search
+    for animations."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for animations!",
+        quote=True
+    )
+
+
+def filter_attachments(update: Update, context: CallbackContext) -> None:
+    """Detects attachiments received from user and tells to user that robot can not search
+    for attachments."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for attachments!",
+        quote=True
+    )
+
+
+def filter_audios(update: Update, context: CallbackContext) -> None:
+    """Detects audios received from user and tells to user that robot can not search
+    for audios."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently, I don't search for Audios!",
+        quote=True
+    )
+
+
+def filter_dice(update: Update, context: CallbackContext) -> None:
+    """Detects dice received from user and tells to user that robot can not search
+    for dice."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Dice is beyound my knowlege!",
+        quote=True
+    )
+
+
+def filter_documents(update: Update, context: CallbackContext) -> None:
+    """Detects documents received from user and tells to user that the robot can not search
+    for documents."""
+
+    user: str = update.message.from_user.first_name
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        f"Dear {user}, Currently I am incapable of searching documents!",
+        quote=True
+    )
+
+
+def policy(update: Update, context: CallbackContext) -> None:
+    """Tells user a message about how the bot handels user data"""
+
+    user: str = update.message.from_user.first_name
+    url = 'http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png'
+    update.message.bot.send_chat_action(
+        chat_id=update.effective_chat.id,
+        action=ChatAction.UPLOAD_PHOTO)
+    update.message.reply_photo(
+        url,
+        f"""Hello dear {user}, 
+As the age is technological, most of us are the users of the technology. 
+It is clear that as technology becomes more sophisticated, so does theft and fraud.
+However, @AAU_Robot aims to send student information the moment the student ID 
+and password are sent to it, and cannot remember and/or store any information.
+Therefore, we remind you that anyone can freely send his/her ID and password and view Grade Report.
+If you want to be sure that @AAU_Robot doesn't store your data, you can ask for the source code
+from BOT DEVELOPER.""",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+
+def about(update: Update, context: CallbackContext):
+    '''Shows some message from bit writter'''
+    update.message.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        "Please read about the bot here https://telegra.ph/About-AAU-ROBOT-12-03",
+        reply_markup=ReplyKeyboardRemove())
+    return
+
+
+def help(update: Update, context: CallbackContext):
+    """Show the some help the uset may refer to"""
+    update.message.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    update.message.reply_text(
+        "You can read help article here https://telegra.ph/HELP-for-AAU-Robot-12-03 ",
+        reply_markup=ReplyKeyboardRemove())
+    return
+
+
 def main() -> None:
+    """
+    Entry point to the program. 
+
+    """
     create_table()
-    TOKEN = '6896362614:AAHoIIltg_jK5BUzU6Q_E40JsSd1ZmQMM2c'
+    TOKEN = config('TELEGRAM_BOT_TOKEN')
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
     conv_handler = ConversationHandler(
@@ -337,18 +642,36 @@ def main() -> None:
         },
         fallbacks=[]
     )
-    # conv_handler_delete_account = ConversationHandler(
-    #     entry_points=[MessageHandler(Filters.regex(
-    #         "^Delete Account$"), delete_account)],
-    #     states={
-    #         CONFIRM_DELETE: [MessageHandler(Filters.text & ~Filters.command, confirm_delete)],
-    #     },
-    #     fallbacks=[]
-    # )
-    # dp.add_handler(conv_handler_delete_account)
+    conv_handler_account_deletion = ConversationHandler(
+        entry_points=[MessageHandler(Filters.regex(
+            "^Delete Account$"), math_question)],
+        states={
+            ACCOUNT_DELETED: [CallbackQueryHandler(handle_math_answer, pattern="^answer_")],
+            ACCOUNT_NOT_DELETED: [MessageHandler(Filters.all, lambda update, context: ConversationHandler.END)],
+        },
+        fallbacks=[]
+    )
+
+    dp.add_handler(conv_handler_account_deletion)
     dp.add_handler(conv_handler_grade_report)
     dp.add_handler(MessageHandler(
         Filters.regex("^View Profile$"), view_profile))
+    dp.add_handler(CommandHandler('policy', policy))
+    dp.add_handler(CommandHandler('about', about))
+    dp.add_handler(CommandHandler('help', help))
+
+    dp.add_handler(MessageHandler(Filters.photo, filter_photos))
+    dp.add_handler(MessageHandler(Filters.video, filter_videos))
+    dp.add_handler(MessageHandler(Filters.contact, filter_contacts))
+    dp.add_handler(MessageHandler(Filters.poll, filter_polls))
+    dp.add_handler(MessageHandler(Filters.caption, filter_captions))
+    dp.add_handler(MessageHandler(Filters.sticker, filter_stickers))
+    dp.add_handler(MessageHandler(Filters.animation, filter_animations))
+    dp.add_handler(MessageHandler(Filters.document, filter_documents))
+    dp.add_handler(MessageHandler(Filters.audio, filter_audios))
+    dp.add_handler(MessageHandler(Filters.dice, filter_dice))
+    dp.add_handler(MessageHandler(Filters.attachment, filter_attachments))
+
     updater.start_polling()
     updater.idle()
 

@@ -157,22 +157,6 @@ def get_grades(campus: str, student_id: str, password: str)-> Union[str, List[st
             value for value in clean_list if not value in unwanted_strings
         ]
         return very_clean_list
-#         list_length: int = len(very_clean_list)
-#         count: int = 0
-#         result: str = ''
-
-#         for string in very_clean_list:
-#             count = count + 1
-#             if count == list_length:
-#                 string: str = string + '\n\n  This bot was Made by @Esubaalew'
-#             result += string + "\n"
-#             if "Academic Year" in string:
-#                 result += """\n
-
-#   __________________________________________\n\n"""
-#             if "Academic Status" in string:
-#                 print(result)
-#                 result = ""
     else:
         return login_response
 
