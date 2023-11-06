@@ -2,6 +2,7 @@ import re
 import random
 import math
 import requests
+from cryptography.fernet import Fernet
 from decouple import config
 from bs4 import BeautifulSoup
 from telegram import (
@@ -39,6 +40,7 @@ aait = 'AAIT'
 aau = 'AAU'
 eiabc = 'EIABC'
 
+KEY = config('SECRET_KEY').encode()
 
 LOGED_BUTTONS: list = [
     [KeyboardButton("Grade Report")],
@@ -51,6 +53,38 @@ GRADE_REPORT = range(4, 8)
 MATH_QUESTION, ACCOUNT_DELETED, ACCOUNT_NOT_DELETED = range(8, 11)
 
 
+def encrypt_data(data: str, key: bytes) -> bytes:
+    """
+    Encrypts the input data using Fernet symmetric encryption.
+
+    Args:
+        data (str): The data to be encrypted as a string.
+        key (bytes): The encryption key as bytes.
+
+    Returns:
+        bytes: The encrypted data as bytes.
+    """
+    fernet = Fernet(key)
+    encrypted_data = fernet.encrypt(data.encode())
+    return encrypted_data
+
+
+def decrypt_data(encrypted_data: bytes, key: bytes) -> str:
+    """
+    Decrypts the encrypted data using the Fernet symmetric encryption key.
+
+    Args:
+        encrypted_data (bytes): The data to be decrypted as bytes.
+        key (bytes): The encryption key as bytes.
+
+    Returns:
+        str: The decrypted data as a string.
+    """
+    fernet = Fernet(key)
+    decrypted_data = fernet.decrypt(encrypted_data).decode()
+    return decrypted_data
+
+
 def is_user_id_valid(user_id: str) -> bool:
     """
     Checks if a user ID is valid based on a specific pattern.
@@ -61,8 +95,8 @@ def is_user_id_valid(user_id: str) -> bool:
     Returns:
         bool: True if the user ID is valid, False otherwise.
     """
-    user_id: str = user_id.upper()  
-    pattern: str = r'^[A-Z]{3}/\d{4}/\d{2}' 
+    user_id: str = user_id.upper()
+    pattern: str = r'^[A-Z]{3}/\d{4}/\d{2}'
     if re.match(pattern, user_id):
         return True
     else:
@@ -114,6 +148,7 @@ def math_question(update: Update, context: CallbackContext) -> int:
     context.user_data['correct_answer'] = correct_answer
 
     return ACCOUNT_DELETED
+
 
 def handle_math_answer(update: Update, context: CallbackContext) -> int:
     """
@@ -174,7 +209,6 @@ def get_password(update: Update, context: CallbackContext) -> int:
     password = update.message.text
     tg_id = update.message.from_user.id
     registered = search_table_by_tg_id(tg_id)
-
     if registered:
         reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(
             tg_id)
@@ -184,9 +218,14 @@ def get_password(update: Update, context: CallbackContext) -> int:
             chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
         profile = get_profile(
-            campus=reg_campus, student_id=reg_id, password=password)
-        grades = get_grades(campus=reg_campus,
-                            student_id=reg_id, password=password)
+            campus=decrypt_data(reg_campus, KEY),
+            student_id=decrypt_data(reg_id, KEY),
+            password=password
+        )
+        grades = get_grades(campus=decrypt_data(reg_campus, KEY),
+                            student_id=decrypt_data(reg_id, KEY),
+                            password=password
+                            )
 
         if isinstance(profile, tuple):
             # Send the photo
@@ -210,27 +249,29 @@ def get_password(update: Update, context: CallbackContext) -> int:
                 if "Academic Status" in string:
                     update.message.reply_text(result)
                     result = ''
+            reply_markup = ReplyKeyboardMarkup(
+                LOGED_BUTTONS,
+                resize_keyboard=True,
+                one_time_keyboard=True,
+                input_field_placeholder='What do you want?')
+            update.message.reply_text(
+                "Please choose an option:", reply_markup=reply_markup)
+
+            return ConversationHandler.END
         else:
             # Edit the "Working on it" message with the error message
             update.message.bot.edit_message_text(
                 text=profile,
                 chat_id=update.effective_chat.id,
-                message_id=working_on_it_msg.message_id
+                message_id=working_on_it_msg.message_id,
             )
     else:
         update.message.reply_text(
-            "Viewing grade report is not available for unregistered users.",
+            "Viewing grade report is not available for unregistered users.\n /start here",
             reply_markup=ReplyKeyboardRemove())
 
-    # Return to the main state
-    reply_markup = ReplyKeyboardMarkup(
-        LOGED_BUTTONS,
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        input_field_placeholder='What do you want?')
-    update.message.reply_text(
-        "Please choose an option:", reply_markup=reply_markup)
     return ConversationHandler.END
+
 
 def view_profile(update: Update, context: CallbackContext) -> int:
     """
@@ -251,9 +292,9 @@ def view_profile(update: Update, context: CallbackContext) -> int:
             tg_id)
         data = [
             [1, "Telegram ID", reg_tg_id],
-            [2, "Portal ID", reg_id],
-            [3, "Telegram Name", reg_name],
-            [4, "Portal Name", reg_campus]
+            [2, "Portal ID", decrypt_data(reg_id, KEY)],
+            [3, "Telegram Name", decrypt_data(reg_name, KEY)],
+            [4, "Portal Name", decrypt_data(reg_campus, KEY)]
         ]
 
         # Create a formatted message with the user's profile information
@@ -268,14 +309,6 @@ def view_profile(update: Update, context: CallbackContext) -> int:
             reply_markup=ReplyKeyboardRemove()
         )
 
-    # Return to the main state
-    reply_markup = ReplyKeyboardMarkup(
-        LOGED_BUTTONS,
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        input_field_placeholder='What do you want?')
-    update.message.reply_text(
-        "Please choose an option:", reply_markup=reply_markup)
     return ConversationHandler.END
 
 
@@ -299,7 +332,8 @@ def start(update: Update, context: CallbackContext) -> int:
             chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
         update.message.reply_photo(
             "http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png",
-            caption="Welcome back %s!!\nSend your password to see your report or click the button of your choice!" % reg_name,
+            caption="Welcome back %s!!\nSend your password to see your report or click the button of your choice!" % decrypt_data(
+                reg_name, KEY),
             reply_markup=ReplyKeyboardMarkup(
                 LOGED_BUTTONS,
                 resize_keyboard=True,
@@ -412,7 +446,11 @@ def get_student_id(update: Update, context: CallbackContext) -> int:
 
     if is_user_id_valid(student_id):
         # Perform registration and database insertion here
-        insert_data((str(tg_id), student_id, username, campus, date_joined))
+        insert_data((str(tg_id),
+                     encrypt_data(student_id, KEY),
+                     encrypt_data(username, KEY),
+                     encrypt_data(campus, KEY),
+                     date_joined))
         message = f"Registration successful for {username} at {campus} with student ID {student_id}. You can now use AAU Robot."
         update.message.reply_text(message)
 
@@ -598,7 +636,7 @@ from BOT DEVELOPER.""",
 def about(update: Update, context: CallbackContext):
     '''Shows some message from bit writter'''
     update.message.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     update.message.reply_text(
         "Please read about the bot here https://telegra.ph/About-AAU-ROBOT-12-03",
         reply_markup=ReplyKeyboardRemove())
@@ -608,7 +646,7 @@ def about(update: Update, context: CallbackContext):
 def help(update: Update, context: CallbackContext):
     """Show the some help the uset may refer to"""
     update.message.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     update.message.reply_text(
         "You can read help article here https://telegra.ph/HELP-for-AAU-Robot-12-03 ",
         reply_markup=ReplyKeyboardRemove())
