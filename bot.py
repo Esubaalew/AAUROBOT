@@ -172,9 +172,22 @@ def handle_math_answer(update: Update, context: CallbackContext) -> int:
             "Your account has been deleted.", reply_markup=ReplyKeyboardRemove())
         return ACCOUNT_DELETED
     else:
-        update.callback_query.answer(
-            "Incorrect answer. Please try again later.")
-        return ACCOUNT_NOT_DELETED
+        update.callback_query.answer("Incorrect answer. Please try again. or /leave")
+
+        # Generate a new math question and send it to the user
+        question, correct_answer = generate_math_question()
+        answers = [correct_answer, correct_answer + 1, correct_answer - 1]
+        random.shuffle(answers)
+        keyboard = [[InlineKeyboardButton(str(answers[0]), callback_data="answer_" + str(answers[0])),
+                    InlineKeyboardButton(
+                        str(answers[1]), callback_data="answer_" + str(answers[1])),
+                    InlineKeyboardButton(str(answers[2]), callback_data="answer_" + str(answers[2]))]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.callback_query.message.reply_text(
+            question, reply_markup=reply_markup)
+        context.user_data['correct_answer'] = correct_answer
+
+        return ACCOUNT_DELETED
 
 
 def ask_for_password(update: Update, context: CallbackContext) -> int:
@@ -294,7 +307,9 @@ def view_profile(update: Update, context: CallbackContext) -> int:
             [1, "Telegram ID", reg_tg_id],
             [2, "Portal ID", decrypt_data(reg_id, KEY)],
             [3, "Telegram Name", decrypt_data(reg_name, KEY)],
-            [4, "Portal Name", decrypt_data(reg_campus, KEY)]
+            [4, "Portal Name", decrypt_data(reg_campus, KEY)],
+            [5, "Date of Registartion", decrypt_data(reg_date, KEY)],
+
         ]
 
         # Create a formatted message with the user's profile information
@@ -360,6 +375,47 @@ def start(update: Update, context: CallbackContext) -> int:
             parse_mode=ParseMode.MARKDOWN
         )
         return AGREE
+
+
+def cancel(update: Update, context: CallbackContext) -> int:
+    """
+    Cancel the registration process and reset the conversation.
+
+    This function handles the '/cancel' command, which allows the user to cancel
+    the ongoing registration process and reset the conversation to its initial state.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The final state of the conversation, which is ConversationHandler.END.
+    """
+    user = update.message.from_user
+    context.user_data.clear()  # Clear user data to reset the registration process
+    update.message.reply_text(
+        "Registration process has been canceled. You can start over by typing /start.")
+    return ConversationHandler.END
+
+def leave(update: Update, context: CallbackContext) -> int:
+    """
+    Cancel the account deletion process and reset the conversation.
+
+    This function handles the '/leave' command, which allows the user to cancel
+    the ongoing account deletion process and reset the conversation to its initial state.
+
+    Args:
+        update (telegram.Update): The incoming update from Telegram.
+        context (telegram.ext.CallbackContext): The context for the conversation.
+
+    Returns:
+        int: The final state of the conversation, which is ConversationHandler.END.
+    """
+    user = update.message.from_user
+    context.user_data.clear()  # Clear user data to reset the registration process
+    update.message.reply_text(
+        "Registration process has been canceled. You can start over by typing /start.")
+    return ConversationHandler.END
 
 
 def registration(update: Update, context: CallbackContext) -> int:
@@ -450,7 +506,7 @@ def get_student_id(update: Update, context: CallbackContext) -> int:
                      encrypt_data(student_id, KEY),
                      encrypt_data(username, KEY),
                      encrypt_data(campus, KEY),
-                     date_joined))
+                     encrypt_data(date_joined, KEY)))
         message = f"Registration successful for {username} at {campus} with student ID {student_id}. You can now use AAU Robot."
         update.message.reply_text(message)
 
@@ -463,7 +519,7 @@ def get_student_id(update: Update, context: CallbackContext) -> int:
             "Please choose an option:", reply_markup=reply_markup)
         return ConversationHandler.END
     else:
-        message = "Invalid student ID format. Please use the format: UGR/XXXX/YY"
+        message = "Invalid student ID format. Please use the format: UGR/XXXX/YY or /cancel to stop registration."
         update.message.reply_text(message)
         return STUDENT_ID
 
@@ -669,7 +725,7 @@ def main() -> None:
             CAMPUS: [CallbackQueryHandler(choose_campus, pattern="^(AAIT|AAU|EIABC)$")],
             STUDENT_ID: [MessageHandler(Filters.text & ~Filters.command, get_student_id)],
         },
-        fallbacks=[]
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
     dp.add_handler(conv_handler)
     conv_handler_grade_report = ConversationHandler(
@@ -687,7 +743,9 @@ def main() -> None:
             ACCOUNT_DELETED: [CallbackQueryHandler(handle_math_answer, pattern="^answer_")],
             ACCOUNT_NOT_DELETED: [MessageHandler(Filters.all, lambda update, context: ConversationHandler.END)],
         },
-        fallbacks=[]
+        fallbacks=[
+            CommandHandler('leave', cancel)  # /cancel as a fallback
+        ]
     )
 
     dp.add_handler(conv_handler_account_deletion)
