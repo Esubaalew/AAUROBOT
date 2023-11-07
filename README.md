@@ -18,7 +18,7 @@ AAU Robot is a Telegram bot designed to provide students of Addis Ababa Universi
 
 ## Usage/Examples
 
-1. Start a conversation with the bot using the `/start` command.
+1. Start a conversation with the [AAU Robot](https://t.me/AAU_Robot) using the `/start` command.
 
 2. Agree to the terms and conditions to begin registration.
 
