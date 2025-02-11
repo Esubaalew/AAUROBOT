@@ -1,5 +1,5 @@
 beautifulsoup4==4.12.2
-cryptography==43.0.1
+cryptography==44.0.1
 ipython==8.17.2
 mechanize==0.4.8
 python-decouple==3.8
