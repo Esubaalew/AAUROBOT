@@ -1,7 +1,7 @@
+python-telegram-bot==21.11.1
 beautifulsoup4==4.12.2
-cryptography==44.0.1
-ipython==8.17.2
+cryptography==43.0.1
 mechanize==0.4.8
 python-decouple==3.8
-python-telegram-bot==13.15
+python-telegram-bot==21.11.1
 requests==2.32.2

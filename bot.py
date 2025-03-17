@@ -1,40 +1,45 @@
 import re
 import random
-import math
-import requests
 from cryptography.fernet import Fernet
+import os
+import logging
+import asyncio
 from decouple import config
-from bs4 import BeautifulSoup
 from telegram import (
     KeyboardButton,
     ReplyKeyboardMarkup,
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    ParseMode,
-    ReplyKeyboardRemove,
-    ChatAction
+    ReplyKeyboardRemove
 )
+from telegram.constants import ParseMode, ChatAction
 from telegram.ext import (
     CallbackContext,
     CommandHandler,
     MessageHandler,
-    Filters,
-    Updater,
+    filters,  # Updated filters
+    Application,  # Replaces Updater
     CallbackQueryHandler,
-    ConversationHandler
+    ConversationHandler,
+    PicklePersistence
 )
-from database import (
+from bott.database import (
     search_table_by_tg_id,
     insert_data,
     create_table,
     delete_from_table,
     modify_idno)
 from datetime import date
-from portal import (
+from bott.portal import (
     login_to_portal,
     get_profile,
     get_grades)
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 aait = 'AAIT'
 aau = 'AAU'
@@ -51,6 +56,11 @@ LOGED_BUTTONS: list = [
 AGREE, DISAGREE, CAMPUS, STUDENT_ID = range(4)
 GRADE_REPORT = range(4, 8)
 MATH_QUESTION, ACCOUNT_DELETED, ACCOUNT_NOT_DELETED = range(8, 11)
+
+persistence = PicklePersistence(filepath='bot_dat')
+
+# Global Application instance
+application = Application.builder().token(config('TELEGRAM_BOT_TOKEN')).persistence(persistence).build()
 
 
 def encrypt_data(data: str, key: bytes) -> bytes:
@@ -110,22 +120,18 @@ def generate_math_question() -> tuple:
     Returns:
         tuple: A tuple containing the math question (str) and the correct answer (int).
     """
-    a: int = random.randint(1, 10)
-    b: int = random.randint(1, 10)
-    operation: str = random.choice(["+", "-", "*", "/"])
-    if operation == "+":
-        result: int = a + b
-    elif operation == "-":
-        result: int = a - b
-    elif operation == "*":
-        result: int = a * b
-    elif operation == "/":
-        result: int = a // b  # Integer division for simplicity
-    question: str = f"What is {a} {operation} {b}?"
-    return question, result
+    a = random.randint(1, 10)
+    b = random.randint(1, 10)
+    operation = random.choice(["+", "-", "*", "/"])
+    if operation == "+": result = a + b
+    elif operation == "-": result = a - b
+    elif operation == "*": result = a * b
+    elif operation == "/": result = a // b
+    return f"What is {a} {operation} {b}?", result
 
 
-def math_question(update: Update, context: CallbackContext) -> int:
+
+async def math_question(update: Update, context: CallbackContext) -> int:
     """
     Generates a math question and sends it to the user with answer options.
 
@@ -136,21 +142,22 @@ def math_question(update: Update, context: CallbackContext) -> int:
     Returns:
         int: The next state of the conversation.
     """
+
     question, correct_answer = generate_math_question()
     answers = [correct_answer, correct_answer + 1, correct_answer - 1]
     random.shuffle(answers)
-    keyboard = [[InlineKeyboardButton(str(answers[0]), callback_data="answer_" + str(answers[0])),
-                InlineKeyboardButton(
-                    str(answers[1]), callback_data="answer_" + str(answers[1])),
-                InlineKeyboardButton(str(answers[2]), callback_data="answer_" + str(answers[2]))]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(question, reply_markup=reply_markup)
-    context.user_data['correct_answer'] = correct_answer
 
+    keyboard = [
+        [InlineKeyboardButton(str(answers[0]), callback_data=f"answer_{answers[0]}")],
+        [InlineKeyboardButton(str(answers[1]), callback_data=f"answer_{answers[1]}")],
+        [InlineKeyboardButton(str(answers[2]), callback_data=f"answer_{answers[2]}")]
+    ]
+    await update.message.reply_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    context.user_data['correct_answer'] = correct_answer
     return ACCOUNT_DELETED
 
 
-def handle_math_answer(update: Update, context: CallbackContext) -> int:
+async def handle_math_answer(update: Update, context: CallbackContext) -> int:
     """
     Handles the user's answer to a math question.
 
@@ -161,36 +168,37 @@ def handle_math_answer(update: Update, context: CallbackContext) -> int:
     Returns:
         int: The next state of the conversation.
     """
-    user_answer = int(update.callback_query.data.split('_')[1])
+
+    query = update.callback_query
+    await query.answer()
+    user_answer = int(query.data.split('_')[1])
     correct_answer = context.user_data.get('correct_answer')
 
     if user_answer == correct_answer:
-        tg_id = update.callback_query.from_user.id
-        delete_from_table(tg_id)
-        update.callback_query.answer("Account deleted successfully!")
-        update.callback_query.message.reply_text(
-            "Your account has been deleted.", reply_markup=ReplyKeyboardRemove())
-        return ACCOUNT_DELETED
-    else:
-        update.callback_query.answer("Incorrect answer. Please try again. or /leave")
+        delete_from_table(query.from_user.id)
+        await query.edit_message_text("✅ Account deleted successfully!")
+        return ConversationHandler.END
 
-        # Generate a new math question and send it to the user
-        question, correct_answer = generate_math_question()
-        answers = [correct_answer, correct_answer + 1, correct_answer - 1]
-        random.shuffle(answers)
-        keyboard = [[InlineKeyboardButton(str(answers[0]), callback_data="answer_" + str(answers[0])),
-                    InlineKeyboardButton(
-                        str(answers[1]), callback_data="answer_" + str(answers[1])),
-                    InlineKeyboardButton(str(answers[2]), callback_data="answer_" + str(answers[2]))]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        update.callback_query.message.reply_text(
-            question, reply_markup=reply_markup)
-        context.user_data['correct_answer'] = correct_answer
-
-        return ACCOUNT_DELETED
+    # Generate new question
+    question, new_answer = generate_math_question()
+    answers = [new_answer, new_answer + 1, new_answer - 1]
+    random.shuffle(answers)
+    
+    keyboard = [
+        [InlineKeyboardButton(str(answers[0]), callback_data=f"answer_{answers[0]}")],
+        [InlineKeyboardButton(str(answers[1]), callback_data=f"answer_{answers[1]}")],
+        [InlineKeyboardButton(str(answers[2]), callback_data=f"answer_{answers[2]}")]
+    ]
+    await query.edit_message_text(
+        text="❌ Incorrect answer. Try again:\n\n" + question,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    context.user_data['correct_answer'] = new_answer
+    return ACCOUNT_DELETED
 
 
-def ask_for_password(update: Update, context: CallbackContext) -> int:
+
+async def ask_for_password(update: Update, context: CallbackContext) -> int:
     """
     Initiates the process of asking the user to enter a password to view the grade report.
 
@@ -201,92 +209,154 @@ def ask_for_password(update: Update, context: CallbackContext) -> int:
     Returns:
         int: The next state of the conversation.
     """
-    update.message.reply_text(
-        "Please enter your password to view the grade report:",
+    msg = await update.message.reply_text(
+        "🔒 Please enter your password to view the grade report:",
         reply_markup=ReplyKeyboardRemove()
     )
+    context.user_data['password_msg_id'] = msg.message_id
     return GRADE_REPORT
 
-
-def get_password(update: Update, context: CallbackContext) -> int:
+async def get_password(update: Update, context: CallbackContext) -> int:
     """
-    Handles the user's input of a password and initiates the process of retrieving and displaying the grade report.
-
-    Args:
-        update (telegram.Update): The incoming update from Telegram.
-        context (telegram.ext.CallbackContext): The context for the conversation.
-
-    Returns:
-        int: The next state of the conversation.
+    Handles password input and initiates grade report retrieval with pagination.
+    For graduates, it congratulates them and skips fetching grades.
     """
-    password = update.message.text
-    tg_id = update.message.from_user.id
-    registered = search_table_by_tg_id(tg_id)
-    if registered:
-        reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(
-            tg_id)
+    try:
+        password = update.message.text
+        tg_id = update.message.from_user.id
+        registered = search_table_by_tg_id(tg_id)
 
-        working_on_it_msg = update.message.reply_text("Working on it...")
-        update.message.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        if not registered:
+            await update.message.reply_text(
+                "Viewing grade report is not available for unregistered users.\n/start here",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return ConversationHandler.END
 
+        # Existing registration check and data retrieval
+        reg_data = search_table_by_tg_id(tg_id)
+        reg_tg_id, reg_id, reg_name, reg_campus, reg_date = reg_data
+
+        working_on_it_msg = await update.message.reply_text("Working on it...")
+        await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
+
+        # Profile handling
         profile = get_profile(
             campus=decrypt_data(reg_campus, KEY),
             student_id=decrypt_data(reg_id, KEY),
             password=password
         )
-        grades = get_grades(campus=decrypt_data(reg_campus, KEY),
-                            student_id=decrypt_data(reg_id, KEY),
-                            password=password
-                            )
 
-        if isinstance(profile, tuple):
-            # Send the photo
-            update.message.bot.send_photo(
-                chat_id=update.effective_chat.id,
+        # Check if the user is a graduate
+        if profile == "It seems you are a graduate, so I am skipping your profile and showing your grade report below.":
+            await update.message.reply_text(
+                "🎓 Congratulations! You are a graduate. 🎓\n\n"
+                "As a graduate, I can no longer provide your grade report. "
+                "This feature is only available for active students.\n\n"
+                "Thank you for using AAU Robot! 🎉"
+            )
+            return ConversationHandler.END  # End the conversation for graduates
+
+        # If the user is not a graduate, proceed with fetching and displaying the profile
+        elif isinstance(profile, tuple):
+            await context.bot.send_photo(
+                update.effective_chat.id,
                 photo=profile[0],
                 caption=profile[1]
             )
-            grades_length: int = len(grades)
-            count: int = 0
-            result: str = ''
-            for string in grades:
-                count = count + 1
-                if count == grades_length:
-                    string: str = string + '\n\n  This bot was Made by @Esubaalew'
-                result += string + "\n"
-                if "Academic Year" in string:
-                    result += """\n
 
-   __________________________________________\n\n"""
-                if "Academic Status" in string:
-                    update.message.reply_text(result)
-                    result = ''
-            reply_markup = ReplyKeyboardMarkup(
-                LOGED_BUTTONS,
-                resize_keyboard=True,
-                one_time_keyboard=True,
-                input_field_placeholder='What do you want?')
-            update.message.reply_text(
-                "Please choose an option:", reply_markup=reply_markup)
+        # Get grades and split into semesters (only for active students)
+        grades = get_grades(
+            campus=decrypt_data(reg_campus, KEY),
+            student_id=decrypt_data(reg_id, KEY),
+            password=password
+        )
 
-            return ConversationHandler.END
-        else:
-            # Edit the "Working on it" message with the error message
-            update.message.bot.edit_message_text(
-                text=profile,
+        # Parse semesters and store in context
+        semesters = []
+        current_semester = []
+
+        for line in grades:
+            current_semester.append(line)
+            if "Academic Status" in line:
+                semesters.append("\n".join(current_semester))
+                current_semester = []
+
+        # Add footer to last semester
+        if semesters:
+            semesters[-1] += "\n\nThis bot was Made by @Esubaalew"
+
+        context.user_data['semesters'] = semesters
+        context.user_data['current_page'] = 0
+
+        # Send first semester with pagination
+        await send_semester(update, context)
+        return ConversationHandler.END
+
+    except Exception as e:
+        logging.error(f"Error in get_password: {e}")
+        await update.message.reply_text(
+            "An error occurred while processing your request. Please try again later."
+        )
+        return ConversationHandler.END
+
+
+async def send_semester(update: Update, context: CallbackContext) -> None:
+    """Send a semester with pagination buttons"""
+    semesters = context.user_data.get('semesters', [])
+    current_page = context.user_data.get('current_page', 0)
+    total_pages = len(semesters)
+
+    if not semesters:
+        await update.message.reply_text("No grade information available")
+        return
+
+    # Create pagination buttons
+    buttons = []
+    if total_pages > 1:
+        if current_page > 0:
+            buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data="prev"))
+        if current_page < total_pages - 1:
+            buttons.append(InlineKeyboardButton("Next ➡️", callback_data="next"))
+
+    # Add footer with page numbers
+    footer = f"\n\n📄 Page {current_page + 1} of {total_pages}"
+    message_text = semesters[current_page] + footer
+
+    # Edit existing message if possible, else send new
+    if 'semester_message_id' in context.user_data:
+        try:
+            await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
-                message_id=working_on_it_msg.message_id,
+                message_id=context.user_data['semester_message_id'],
+                text=message_text,
+                reply_markup=InlineKeyboardMarkup([buttons]) if buttons else None
             )
-    else:
-        update.message.reply_text(
-            "Viewing grade report is not available for unregistered users.\n /start here",
-            reply_markup=ReplyKeyboardRemove())
+            return
+        except Exception as e:
+            print(f"Error editing message: {e}")
 
-    return ConversationHandler.END
+    msg = await update.message.reply_text(
+        message_text,
+        reply_markup=InlineKeyboardMarkup([buttons]) if buttons else None
+    )
+    context.user_data['semester_message_id'] = msg.message_id
 
+async def handle_page_navigation(update: Update, context: CallbackContext) -> None:
+    """Handle pagination button presses"""
+    query = update.callback_query
+    await query.answer()
 
-def view_profile(update: Update, context: CallbackContext) -> int:
+    current_page = context.user_data.get('current_page', 0)
+
+    if query.data == "prev" and current_page > 0:
+        context.user_data['current_page'] -= 1
+    elif query.data == "next":
+        context.user_data['current_page'] += 1
+
+    await send_semester(update, context)
+
+async def view_profile(update: Update, context: CallbackContext) -> int:
     """
     Displays the user's profile information.
 
@@ -301,33 +371,54 @@ def view_profile(update: Update, context: CallbackContext) -> int:
     registered = search_table_by_tg_id(tg_id)
 
     if registered:
-        reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(
-            tg_id)
-        data = [
-            [1, "Telegram ID", reg_tg_id],
-            [2, "Portal ID", decrypt_data(reg_id, KEY)],
-            [3, "Telegram Name", decrypt_data(reg_name, KEY)],
-            [4, "Portal Name", decrypt_data(reg_campus, KEY)],
-            [5, "Date of Registartion", decrypt_data(reg_date, KEY)],
+        # Fetch user data
+        reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(tg_id)
 
-        ]
+        # Decrypt data
+        portal_id = decrypt_data(reg_id, KEY)
+        telegram_name = decrypt_data(reg_name, KEY)
+        portal_name = decrypt_data(reg_campus, KEY)
+        registration_date = decrypt_data(reg_date, KEY)
 
-        # Create a formatted message with the user's profile information
-        message = "Your Profile Information:\n"
-        for item in data:
-            message += f"{item[1]}: {item[2]}\n"
+        # Build profile message with emojis and formatting
+        profile_message = (
+            "📄 **Your Profile Information**\n\n"
+            f"🆔 **Telegram ID**: `{reg_tg_id}`\n"
+            f"📋 **Portal ID**: `{portal_id}`\n"
+            f"👤 **Telegram Name**: {telegram_name}\n"
+            f"🏫 **Campus**: {portal_name}\n"
+            f"📅 **Date of Registration**: {registration_date}\n\n"
+            "You can use the buttons below to explore more features!"
+        )
 
-        update.message.reply_text(message)
+        # Send profile message
+        await update.message.reply_text(
+            profile_message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardMarkup(
+                LOGED_BUTTONS,
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+        )
     else:
-        update.message.reply_text(
-            "Viewing profile is not available for unregistered users. Please Register using /start.",
+        # User is not registered
+        unregistered_message = (
+            "❌ **Profile Unavailable**\n\n"
+            "You are not registered with AAU Robot.\n"
+            "To register, use the /start command and follow the instructions.\n\n"
+            "If you need help, use /help."
+        )
+        await update.message.reply_text(
+            unregistered_message,
+            parse_mode=ParseMode.MARKDOWN,
             reply_markup=ReplyKeyboardRemove()
         )
 
     return ConversationHandler.END
 
 
-def start(update: Update, context: CallbackContext) -> int:
+async def start(update: Update, context: CallbackContext) -> int:
     """
     Handles the start of the conversation and user registration.
 
@@ -340,44 +431,91 @@ def start(update: Update, context: CallbackContext) -> int:
     """
     tg_id = update.message.from_user.id
     registered = search_table_by_tg_id(tg_id)
-    if registered:
-        reg_tg_id, reg_id, reg_name, reg_campus, reg_date = search_table_by_tg_id(
-            tg_id)
-        update.message.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-        update.message.reply_photo(
-            "http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png",
-            caption="Welcome back %s!!\nSend your password to see your report or click the button of your choice!" % decrypt_data(
-                reg_name, KEY),
-            reply_markup=ReplyKeyboardMarkup(
-                LOGED_BUTTONS,
-                resize_keyboard=True,
-                one_time_keyboard=True,
-                input_field_placeholder='What do you want?'
+
+    # Welcome image URLs
+    WELCOME_IMAGE_URL = "https://www.aau.edu.et/_next/image?url=https%3A%2F%2Fvolume.aau.edu.et%2F5%2C065372f0f56e.jpg&w=1920&q=75"
+    NEW_USER_IMAGE_URL = "https://www.aau.edu.et/_next/image?url=https%3A%2F%2Fvolume.aau.edu.et%2F6%2C06570a81d169.jpg&w=1920&q=75"
+
+    try:
+        # Send chat action (uploading photo)
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO
+        )
+
+        if registered:
+            # User is registered
+            reg_tg_id, reg_id, reg_name, reg_campus, reg_date = registered
+            welcome_message = (
+                f"👋 Welcome back, {decrypt_data(reg_name, KEY)}!\n\n"
+                "Send your password to see your report or click the button of your choice!"
             )
+
+            # Try to send the welcome image with caption
+            try:
+                await update.message.reply_photo(
+                    WELCOME_IMAGE_URL,
+                    caption=welcome_message,
+                    reply_markup=ReplyKeyboardMarkup(
+                        LOGED_BUTTONS,
+                        resize_keyboard=True,
+                        one_time_keyboard=True,
+                        input_field_placeholder='What do you want?'
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Failed to send welcome image: {e}")
+                # Fallback: Send text message if image fails
+                await update.message.reply_text(
+                    welcome_message,
+                    reply_markup=ReplyKeyboardMarkup(
+                        LOGED_BUTTONS,
+                        resize_keyboard=True,
+                        one_time_keyboard=True,
+                        input_field_placeholder='What do you want?'
+                    )
+                )
+            return ConversationHandler.END
+
+        else:
+            # New user
+            welcome_message = (
+                "👋 Welcome to AAU Robot!\n\n"
+                "Before you can use the bot, please read /policy and agree to our terms and conditions."
+            )
+            keyboard = [
+                [InlineKeyboardButton("✅ AGREE", callback_data="agree")],
+                [InlineKeyboardButton("❌ DISAGREE", callback_data="disagree")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # Try to send the new user image with caption
+            try:
+                await update.message.reply_photo(
+                    NEW_USER_IMAGE_URL,
+                    caption=welcome_message,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Failed to send new user image: {e}")
+                # Fallback: Send text message if image fails
+                await update.message.reply_text(
+                    welcome_message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            return AGREE
+
+    except Exception as e:
+        logger.error(f"Error in start function: {e}")
+        # Fallback for critical errors
+        await update.message.reply_text(
+            "👋 Welcome to AAU Robot!\n\n"
+            "Something went wrong. Please try again or contact support."
         )
         return ConversationHandler.END
-    else:
-        message = '''Welcome to AAU Robot!\n Before you can use the bot, please read /policy and agree to our terms and conditions.
-        '''
-        keyboard = [[InlineKeyboardButton("AGREE", callback_data="agree")],
-                    [InlineKeyboardButton("DISAGREE", callback_data="disagree")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-        update.message.reply_photo(
-            "http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png")
-        update.message.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        update.message.reply_text(
-            message,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return AGREE
 
 
-def cancel(update: Update, context: CallbackContext) -> int:
+async def cancel(update: Update, context: CallbackContext) -> int:
     """
     Cancel the registration process and reset the conversation.
 
@@ -391,13 +529,25 @@ def cancel(update: Update, context: CallbackContext) -> int:
     Returns:
         int: The final state of the conversation, which is ConversationHandler.END.
     """
-    user = update.message.from_user
-    context.user_data.clear()  # Clear user data to reset the registration process
-    update.message.reply_text(
-        "Registration process has been canceled. You can start over by typing /start.")
+    # Clear user data to reset the registration process
+    context.user_data.clear()
+
+    # Send cancellation message with emojis and clear instructions
+    cancellation_message = (
+        "❌ **Registration Canceled**\n\n"
+        "The registration process has been canceled.\n\n"
+        "You can start over by typing /start or use /help for assistance."
+    )
+
+    await update.message.reply_text(
+        cancellation_message,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
-def leave(update: Update, context: CallbackContext) -> int:
+
+async def leave(update: Update, context: CallbackContext) -> int:
     """
     Cancel the account deletion process and reset the conversation.
 
@@ -411,78 +561,82 @@ def leave(update: Update, context: CallbackContext) -> int:
     Returns:
         int: The final state of the conversation, which is ConversationHandler.END.
     """
-    user = update.message.from_user
-    context.user_data.clear()  # Clear user data to reset the registration process
-    update.message.reply_text(
-        "Registration process has been canceled. You can start over by typing /start.")
+    # Clear user data to reset the account deletion process
+    context.user_data.clear()
+
+    # Send cancellation message with emojis and clear instructions
+    cancellation_message = (
+        "❌ **Account Deletion Canceled**\n\n"
+        "The account deletion process has been canceled.\n\n"
+        "You can start over by typing /start or use /help for assistance."
+    )
+
+    await update.message.reply_text(
+        cancellation_message,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
 
-def registration(update: Update, context: CallbackContext) -> int:
-    """
-    Handles the registration process, prompting the user to agree to terms and choose a campus.
-
-    Args:
-        update (telegram.Update): The incoming update from Telegram.
-        context (telegram.ext.CallbackContext): The context for the conversation.
-
-    Returns:
-        int: The next state of the conversation.
-    """
+async def registration(update: Update, context: CallbackContext) -> int:
+    """Handles the registration process."""
     query = update.callback_query
-    query.answer()
-    chat_id = query.message.chat_id
+    await query.answer()
+
     if query.data == "agree":
-        message = '''Before you can use AAU Robot, please choose your campus.
-        '''
-        keyboard = [
-            [InlineKeyboardButton(aait, callback_data=aait),
-             InlineKeyboardButton(aau, callback_data=aau),
-             InlineKeyboardButton(eiabc, callback_data=eiabc)]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        context.bot.edit_message_text(
-            message,
-            chat_id=chat_id,
-            message_id=query.message.message_id,
-            reply_markup=reply_markup,
+        # User agreed to terms
+        campus_selection_message = (
+            "🏫 **Choose Your Campus**\n\n"
+            "Please select your campus from the options below:"
+        )
+
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=campus_selection_message,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(aait, callback_data=aait)],
+                [InlineKeyboardButton(aau, callback_data=aau)],
+                [InlineKeyboardButton(eiabc, callback_data=eiabc)]
+            ]),
             parse_mode=ParseMode.MARKDOWN
         )
+
+        context.user_data['campus'] = query.data
         return CAMPUS
-    else:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text="Sorry, you must agree to the terms to use AAU Robot. Registration cannot proceed without agreement."
+    elif query.data == "disagree":
+        # User disagreed with terms
+        disagreement_message = (
+            "❌ **Registration Canceled**\n\n"
+            "You must agree to the terms and conditions to use this bot.\n\n"
+            "If you change your mind, you can start over by typing /start."
+        )
+
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=disagreement_message,
+            parse_mode=ParseMode.MARKDOWN
         )
         return ConversationHandler.END
+    else:
+        return CAMPUS
 
 
-def choose_campus(update: Update, context: CallbackContext) -> int:
-    """
-    Handles the selection of a campus during registration.
-
-    Args:
-        update (telegram.Update): The incoming update from Telegram.
-        context (telegram.ext.CallbackContext): The context for the conversation.
-
-    Returns:
-        int: The next state of the conversation.
-    """
+async def choose_campus(update: Update, context: CallbackContext) -> int:
+    """Handles the selection of a campus during registration."""
     query = update.callback_query
-    query.answer()
-    chat_id = query.message.chat_id
+    await query.answer()
     context.user_data['campus'] = query.data
-    message = '''Please enter your student ID.
-    '''
-    context.bot.send_message(
-        chat_id=chat_id,
-        text=message,
-        reply_markup=ReplyKeyboardRemove()
+
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=f"🏫 Selected campus: {query.data}\n\n📝 Please enter your student ID in UGR/XXXX/YY format:"
     )
+
     return STUDENT_ID
 
 
-def get_student_id(update: Update, context: CallbackContext) -> int:
+async def get_student_id(update: Update, context: CallbackContext) -> int:
     """
     Handles the user input of their student ID during registration.
 
@@ -500,277 +654,322 @@ def get_student_id(update: Update, context: CallbackContext) -> int:
     campus = context.user_data['campus']
     date_joined = date.today().strftime("%d/%m/%Y")
 
-    if is_user_id_valid(student_id):
-        # Perform registration and database insertion here
-        insert_data((str(tg_id),
-                     encrypt_data(student_id, KEY),
-                     encrypt_data(username, KEY),
-                     encrypt_data(campus, KEY),
-                     encrypt_data(date_joined, KEY)))
-        message = f"Registration successful for {username} at {campus} with student ID {student_id}. You can now use AAU Robot."
-        update.message.reply_text(message)
+    try:
+        if is_user_id_valid(student_id):
+            # Perform registration and database insertion
+            insert_data((
+                str(tg_id),
+                encrypt_data(student_id, KEY),
+                encrypt_data(username, KEY),
+                encrypt_data(campus, KEY),
+                encrypt_data(date_joined, KEY)
+            ))
 
-        # Show loged_buttons keyboard
-        reply_markup = ReplyKeyboardMarkup(
-            LOGED_BUTTONS,
-            resize_keyboard=True,
-            one_time_keyboard=True)
-        update.message.reply_text(
-            "Please choose an option:", reply_markup=reply_markup)
+            # Success message with emojis
+            success_message = (
+                f"✅ Registration successful!\n\n"
+                f"👤 Name: {username}\n"
+                f"🏫 Campus: {campus}\n"
+                f"🆔 Student ID: {student_id}\n\n"
+                f"You can now use AAU Robot. Choose an option below to get started!"
+            )
+
+            await update.message.reply_text(
+                success_message,
+                reply_markup=ReplyKeyboardMarkup(
+                    LOGED_BUTTONS,
+                    resize_keyboard=True,
+                    one_time_keyboard=True
+                )
+            )
+            return ConversationHandler.END
+
+        else:
+            # Invalid student ID format
+            error_message = (
+                "❌ Invalid student ID format.\n\n"
+                "Please use the correct format: `UGR/XXXX/YY`\n\n"
+                "For example: `UGR/1234/12`\n\n"
+                "If you want to cancel registration, use /cancel."
+            )
+            await update.message.reply_text(
+                error_message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return STUDENT_ID
+
+    except Exception as e:
+        logger.error(f"Error in get_student_id: {e}")
+        # Fallback for unexpected errors
+        await update.message.reply_text(
+            "❌ An error occurred during registration. Please try again later or contact support."
+        )
         return ConversationHandler.END
-    else:
-        message = "Invalid student ID format. Please use the format: UGR/XXXX/YY or /cancel to stop registration."
-        update.message.reply_text(message)
-        return STUDENT_ID
 
 
-def filter_photos(update: Update, context: CallbackContext) -> None:
-    """Detects photos from user and tells to user that robot can not search
-    for photos"""
-
+async def filter_photos(update: Update, context: CallbackContext) -> None:
+    """Detects photos from user and informs them that the bot cannot process photos."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Photos/Images!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"📸 Dear {user}, I currently don't support searching or processing photos. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_videos(update: Update, context: CallbackContext) -> None:
-    """Detects videos received from user and tells to user that robot can not search
-    for videos"""
-
+async def filter_videos(update: Update, context: CallbackContext) -> None:
+    """Detects videos from user and informs them that the bot cannot process videos."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Videos",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"🎥 Dear {user}, I currently don't support searching or processing videos. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_contacts(update: Update, context: CallbackContext) -> None:
-    """Detects contacts received from user and tells to user that robot can not search
-    for contats"""
-
+async def filter_contacts(update: Update, context: CallbackContext) -> None:
+    """Detects contacts from user and informs them that the bot cannot process contacts."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Contacts or Contacts are useless for me",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"📇 Dear {user}, I currently don't support processing contacts. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_polls(update: Update, context: CallbackContext) -> None:
-    """Detects polls received from user and tells to user that robot can not search
-    for polls"""
-
+async def filter_polls(update: Update, context: CallbackContext) -> None:
+    """Detects polls from user and informs them that the bot cannot process polls."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't need polls or i don't search for them!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"📊 Dear {user}, I currently don't support processing polls. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_captions(update: Update, context: CallbackContext) -> None:
-    """Detects captions received from user and tells to user that robot can not search
-    for captions."""
-
+async def filter_captions(update: Update, context: CallbackContext) -> None:
+    """Detects captions from user and informs them that the bot cannot process captions."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't need captions for my work or i don't search for them!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"📝 Dear {user}, I currently don't support processing captions. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_stickers(update: Update, context: CallbackContext) -> None:
-    """Detects stickers received from user and tells to user that robot can not search
-    for stickers."""
-
+async def filter_stickers(update: Update, context: CallbackContext) -> None:
+    """Detects stickers from user and informs them that the bot cannot process stickers."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Stickers!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"🖼️ Dear {user}, I currently don't support processing stickers. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_animations(update: Update, context: CallbackContext) -> None:
-    """Detects animations received from user and tells to user that robot can not search
-    for animations."""
-
+async def filter_animations(update: Update, context: CallbackContext) -> None:
+    """Detects animations from user and informs them that the bot cannot process animations."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for animations!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"🎞️ Dear {user}, I currently don't support processing animations. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_attachments(update: Update, context: CallbackContext) -> None:
-    """Detects attachiments received from user and tells to user that robot can not search
-    for attachments."""
-
+async def filter_attachments(update: Update, context: CallbackContext) -> None:
+    """Detects attachments from user and informs them that the bot cannot process attachments."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for attachments!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"📎 Dear {user}, I currently don't support processing attachments. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_audios(update: Update, context: CallbackContext) -> None:
-    """Detects audios received from user and tells to user that robot can not search
-    for audios."""
-
+async def filter_audios(update: Update, context: CallbackContext) -> None:
+    """Detects audios from user and informs them that the bot cannot process audios."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently, I don't search for Audios!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"🎵 Dear {user}, I currently don't support processing audios. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_dice(update: Update, context: CallbackContext) -> None:
-    """Detects dice received from user and tells to user that robot can not search
-    for dice."""
-
+async def filter_dice(update: Update, context: CallbackContext) -> None:
+    """Detects dice from user and informs them that the bot cannot process dice."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Dice is beyound my knowlege!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"🎲 Dear {user}, I currently don't support processing dice. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def filter_documents(update: Update, context: CallbackContext) -> None:
-    """Detects documents received from user and tells to user that the robot can not search
-    for documents."""
-
+async def filter_documents(update: Update, context: CallbackContext) -> None:
+    """Detects documents from user and informs them that the bot cannot process documents."""
     user: str = update.message.from_user.first_name
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        f"Dear {user}, Currently I am incapable of searching documents!",
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"📄 Dear {user}, I currently don't support processing documents. "
+        "Please use text-based commands instead!",
         quote=True
     )
 
 
-def policy(update: Update, context: CallbackContext) -> None:
-    """Tells user a message about how the bot handels user data"""
-
+async def policy(update: Update, context: CallbackContext) -> None:
+    """Informs the user about how the bot handles user data."""
     user: str = update.message.from_user.first_name
-    url = 'http://www.aau.edu.et/wp-content/uploads/2017/06/wallnew2.png'
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id,
-        action=ChatAction.UPLOAD_PHOTO)
-    update.message.reply_photo(
-        url,
-        f"""Hello dear {user}, 
-As the age is technological, most of us are the users of the technology. 
-It is clear that as technology becomes more sophisticated, so does theft and fraud.
-However, @AAU_Robot aims to send student information the moment the student ID 
-and password are sent to it, and cannot remember and/or store any information.
-Therefore, we remind you that anyone can freely send his/her ID and password and view Grade Report.
-If you want to be sure that @AAU_Robot doesn't store your data, you can ask for the source code
-from BOT DEVELOPER.""",
-        reply_markup=ReplyKeyboardRemove()
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        f"🔒 **Privacy Policy**\n\n"
+        f"Hello {user},\n\n"
+        "At AAU Robot, we take your privacy seriously. Here's how we handle your data:\n\n"
+        "1. **No Data Storage**: We do not store your student ID, password, or any personal information.\n"
+        "2. **Secure Communication**: All data is transmitted securely using encryption.\n"
+        "3. **Transparency**: You can review our full privacy policy here: "
+        "https://aau-robot.esubalew.et/\n\n"
+        "If you have any concerns, feel free to reach out to the bot developer.",
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode=ParseMode.MARKDOWN
     )
 
 
-def about(update: Update, context: CallbackContext):
-    '''Shows some message from bit writter'''
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        "Please read about the bot here https://telegra.ph/About-AAU-ROBOT-12-03",
-        reply_markup=ReplyKeyboardRemove())
+async def about(update: Update, context: CallbackContext) -> None:
+    """Provides information about the bot."""
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        "🤖 **About AAU Robot**\n\n"
+        "AAU Robot is designed to help students at Addis Ababa University access their "
+        "academic information quickly and securely.\n\n"
+        "For more details, visit: https://aau-robot.esubalew.et/",
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode=ParseMode.MARKDOWN
+    )
     return
 
 
-def help(update: Update, context: CallbackContext):
-    """Show the some help the uset may refer to"""
-    update.message.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    update.message.reply_text(
-        "You can read help article here https://telegra.ph/HELP-for-AAU-Robot-12-03 ",
-        reply_markup=ReplyKeyboardRemove())
+async def help(update: Update, context: CallbackContext) -> None:
+    """Provides help information to the user."""
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+    await update.message.reply_text(
+        "🆘 **Help**\n\n"
+        "Here are some commands you can use:\n\n"
+        "- /start: Start the bot and register.\n"
+        "- /help: Get help and instructions.\n"
+        "- /policy: Learn about our privacy policy.\n"
+        "- /about: Learn more about AAU Robot.\n\n"
+        "For detailed instructions, visit: https://aau-robot.esubalew.et/",
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode=ParseMode.MARKDOWN
+    )
     return
 
 
-def main() -> None:
-    """
-    Entry point to the program. 
 
-    """
-    create_table()
-    TOKEN = config('TELEGRAM_BOT_TOKEN')
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+async def bot_tele(text):
+    # Create application
+    application = (
+        Application.builder().token(config('TELEGRAM_BOT_TOKEN')).persistence(persistence).build()
+    )
+
+    
+
+    
+    # Register handlers
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             AGREE: [CallbackQueryHandler(registration, pattern="^(agree|disagree)$")],
             CAMPUS: [CallbackQueryHandler(choose_campus, pattern="^(AAIT|AAU|EIABC)$")],
-            STUDENT_ID: [MessageHandler(Filters.text & ~Filters.command, get_student_id)],
+            STUDENT_ID: [MessageHandler(filters.TEXT, get_student_id)],
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[CommandHandler('cancel', cancel)],
+        persistent=True,
+        name="registration",
     )
-    dp.add_handler(conv_handler)
+    application.add_handler(conv_handler)
+
     conv_handler_grade_report = ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex(
-            "^Grade Report$"), ask_for_password)],
+        entry_points=[MessageHandler(filters.Regex("^Grade Report$"), ask_for_password)],
         states={
-            GRADE_REPORT: [MessageHandler(Filters.text & ~Filters.command, get_password)],
+            GRADE_REPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_password)],
         },
-        fallbacks=[]
+        fallbacks=[CommandHandler('cancel', cancel)],
+        persistent=True,
+        name="grade_report",
     )
+    application.add_handler(conv_handler_grade_report)
+
     conv_handler_account_deletion = ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex(
-            "^Delete Account$"), math_question)],
+        entry_points=[MessageHandler(filters.Regex("^Delete Account$"), math_question)],
         states={
             ACCOUNT_DELETED: [CallbackQueryHandler(handle_math_answer, pattern="^answer_")],
-            ACCOUNT_NOT_DELETED: [MessageHandler(Filters.all, lambda update, context: ConversationHandler.END)],
+            ACCOUNT_NOT_DELETED: [MessageHandler(filters.ALL, lambda update, context: ConversationHandler.END)],
         },
-        fallbacks=[
-            CommandHandler('leave', cancel)  # /cancel as a fallback
-        ]
+        fallbacks=[CommandHandler('leave', cancel)],
+        persistent=True,
+        name="account_deletion",
     )
+    application.add_handler(conv_handler_account_deletion)
 
-    dp.add_handler(conv_handler_account_deletion)
-    dp.add_handler(conv_handler_grade_report)
-    dp.add_handler(MessageHandler(
-        Filters.regex("^View Profile$"), view_profile))
-    dp.add_handler(CommandHandler('policy', policy))
-    dp.add_handler(CommandHandler('about', about))
-    dp.add_handler(CommandHandler('help', help))
-
-    dp.add_handler(MessageHandler(Filters.photo, filter_photos))
-    dp.add_handler(MessageHandler(Filters.video, filter_videos))
-    dp.add_handler(MessageHandler(Filters.contact, filter_contacts))
-    dp.add_handler(MessageHandler(Filters.poll, filter_polls))
-    dp.add_handler(MessageHandler(Filters.caption, filter_captions))
-    dp.add_handler(MessageHandler(Filters.sticker, filter_stickers))
-    dp.add_handler(MessageHandler(Filters.animation, filter_animations))
-    dp.add_handler(MessageHandler(Filters.document, filter_documents))
-    dp.add_handler(MessageHandler(Filters.audio, filter_audios))
-    dp.add_handler(MessageHandler(Filters.dice, filter_dice))
-    dp.add_handler(MessageHandler(Filters.attachment, filter_attachments))
-
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(CallbackQueryHandler(handle_page_navigation, pattern="^(prev|next)$"))
+    application.add_handler(MessageHandler(filters.Regex("^View Profile$"), view_profile))
+    application.add_handler(CommandHandler('policy', policy))
+    application.add_handler(CommandHandler('about', about))
+    application.add_handler(CommandHandler('help', help))
+    application.add_handler(MessageHandler(filters.PHOTO, filter_photos))
+    application.add_handler(MessageHandler(filters.VIDEO, filter_videos))
+    application.add_handler(MessageHandler(filters.CONTACT, filter_contacts))
+    application.add_handler(MessageHandler(filters.POLL, filter_polls))
+    application.add_handler(MessageHandler(filters.CAPTION, filter_captions))
+    application.add_handler(MessageHandler(filters.Sticker.ALL, filter_stickers))
+    application.add_handler(MessageHandler(filters.ANIMATION, filter_animations))
+    application.add_handler(MessageHandler(filters.Document.ALL, filter_documents))
+    application.add_handler(MessageHandler(filters.AUDIO, filter_audios))
+    application.add_handler(MessageHandler(filters.Dice.ALL, filter_dice))
+    application.add_handler(MessageHandler(filters.ATTACHMENT, filter_attachments))
 
 
-if __name__ == '__main__':
-    main()
+    
+    await application.run.polling()
