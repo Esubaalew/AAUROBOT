@@ -1,10 +1,10 @@
-# bot.py
+# portal.py
 """
 A telegram client for safely commuicating with AAU Portal.
 """
 import mechanize
 from mechanize import Browser
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from enum import Enum
 from typing import Union, Tuple, List
 
@@ -48,7 +48,7 @@ def login_to_portal(campus: str, student_id: str, password: str)-> Union[str, Tu
         browser.set_handle_robots(False)
         browser.open(url)
         browser.select_form(nr=0)
-        browser.addheaders: list = [('User-agent', 'Mozilla/104.0.2')]
+        browser.addheaders = [('User-agent', 'Mozilla/104.0.2')]
         browser["UserName"] = student_id
         browser["Password"] = password
         response = browser.submit()
@@ -56,7 +56,9 @@ def login_to_portal(campus: str, student_id: str, password: str)-> Union[str, Tu
         loged = browser.response().read()
         soup: BeautifulSoup = BeautifulSoup(loged, 'html.parser')
         if requested_url == f"{url}Home":
-            return (loged, browser)
+            return (loged, browser, False)
+        if requested_url == f"{url}Grade/GradeReport":
+            return (loged, browser, True)
         elif 'Incorrect username or password.' in soup.text:
             login_response = 'Incorrect username or password.'
         elif 'Invalid credentials. You have 4 more attempt(s) before your account gets locked out.' in soup.text:
@@ -96,6 +98,9 @@ def get_profile(campus: str, student_id: str, password: str)-> Union[str, Tuple[
 
     login_response = login_to_portal(campus, student_id, password)
     if isinstance(login_response, tuple):
+        if login_response[-1]:
+            return "It seems you are a graduate, so I am skipping your profile and showing your grade report below."
+        
         html = login_response[0]
         soup = BeautifulSoup(html, 'html.parser')
         datas: list = [row.text.strip() for row in soup.table]
@@ -159,5 +164,3 @@ def get_grades(campus: str, student_id: str, password: str)-> Union[str, List[st
         return very_clean_list
     else:
         return login_response
-
-
